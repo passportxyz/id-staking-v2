@@ -50,6 +50,8 @@ contract GitcoinIdentityStaking is
     uint16 slashedInRound;
   }
 
+  mapping(address => uint88) public userTotalStaked;
+
   mapping(address => Stake) public selfStakes;
   mapping(address => mapping(address => Stake)) public communityStakes;
 
@@ -125,6 +127,7 @@ contract GitcoinIdentityStaking is
 
     selfStakes[msg.sender].amount += amount;
     selfStakes[msg.sender].unlockTime = unlockTime;
+    userTotalStaked[msg.sender] += amount;
 
     if (!gtc.transferFrom(msg.sender, address(this), amount)) {
       revert FailedTransfer();
@@ -143,6 +146,7 @@ contract GitcoinIdentityStaking is
     }
 
     selfStakes[msg.sender].amount -= amount;
+    userTotalStaked[msg.sender] -= amount;
 
     gtc.transfer(msg.sender, amount);
 
@@ -172,6 +176,7 @@ contract GitcoinIdentityStaking is
 
     communityStakes[msg.sender][stakee].amount += amount;
     communityStakes[msg.sender][stakee].unlockTime = unlockTime;
+    userTotalStaked[msg.sender] += amount;
 
     if (!gtc.transferFrom(msg.sender, address(this), amount)) {
       revert FailedTransfer();
@@ -190,6 +195,7 @@ contract GitcoinIdentityStaking is
     }
 
     communityStakes[msg.sender][stakee].amount -= amount;
+    userTotalStaked[msg.sender] -= amount;
 
     gtc.transfer(msg.sender, amount);
 
@@ -221,6 +227,7 @@ contract GitcoinIdentityStaking is
       }
       totalSlashed[currentSlashRound] += slashedAmount;
       selfStakes[staker].amount -= slashedAmount;
+      userTotalStaked[staker] -= slashedAmount;
       selfStakes[staker].slashedAmount += slashedAmount;
       emit Slash(staker, slashedAmount, currentSlashRound);
     }
@@ -241,6 +248,7 @@ contract GitcoinIdentityStaking is
       }
       totalSlashed[currentSlashRound] += slashedAmount;
       communityStakes[staker][stakee].amount -= slashedAmount;
+      userTotalStaked[staker] -= slashedAmount;
       communityStakes[staker][stakee].slashedAmount += slashedAmount;
       emit Slash(staker, slashedAmount, currentSlashRound);
     }
