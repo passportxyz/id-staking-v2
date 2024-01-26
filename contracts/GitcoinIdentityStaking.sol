@@ -35,6 +35,9 @@ contract GitcoinIdentityStaking is
   error NotOwnerOfStake();
   error AmountTooHigh();
   error StakerStakeeMismatch();
+  error FundsNotAvailableToSlash();
+  error FundsNotAvailableToReleaseFromRound();
+  error RoundAlreadyBurned();
 
   bytes32 public constant SLASHER_ROLE = keccak256("SLASHER_ROLE");
   bytes32 public constant RELEASER_ROLE = keccak256("RELEASER_ROLE");
@@ -58,35 +61,35 @@ contract GitcoinIdentityStaking is
 
   address public burnAddress;
 
-  mapping(uint256 round => uint96 amount) public totalSlashed;
+  mapping(uint256 round => uint88 amount) public totalSlashed;
 
   event SelfStake(
     address indexed staker,
-    uint96 amount,
+    uint88 amount,
     uint64 unlockTime
   );
 
   event CommunityStake(
     address indexed staker,
     address indexed stakee,
-    uint96 amount,
+    uint88 amount,
     uint64 unlockTime
   );
 
   event SelfStakeWithdrawn(
     address indexed staker,
-    uint96 amount
+    uint88 amount
   );
 
   event CommunityStakeWithdrawn(
     address indexed staker,
     address indexed stakee,
-    uint96 amount
+    uint88 amount
   );
 
-  event Slash(address indexed staker, uint96 amount, uint16 round);
+  event Slash(address indexed staker, uint88 amount, uint16 round);
 
-  event LockAndBurn(uint256 indexed round, uint96 amount);
+  event LockAndBurn(uint256 indexed round, uint88 amount);
 
   GTC public gtc;
 
@@ -105,7 +108,7 @@ contract GitcoinIdentityStaking is
     lastBurnTimestamp = block.timestamp;
   }
 
-  function selfStake(uint96 amount, uint64 duration) external {
+  function selfStake(uint88 amount, uint64 duration) external {
     // revert if amount is 0. Since this value is unsigned integer
     if (amount == 0) {
       revert AmountMustBeGreaterThanZero();
@@ -130,7 +133,7 @@ contract GitcoinIdentityStaking is
     emit SelfStake(msg.sender, amount, unlockTime);
   }
 
-  function withdrawSelfStake(uint256 stakeId, uint96 amount) external {
+  function withdrawSelfStake(uint88 amount) external {
     if (selfStakes[msg.sender].unlockTime > block.timestamp) {
       revert StakeIsLocked();
     }
@@ -148,7 +151,7 @@ contract GitcoinIdentityStaking is
 
   function communityStake(
     address stakee,
-    uint96 amount,
+    uint88 amount,
     uint64 duration
   ) external {
     if (stakee == msg.sender) {
@@ -177,7 +180,7 @@ contract GitcoinIdentityStaking is
     emit CommunityStake(msg.sender, stakee, amount, unlockTime);
   }
 
-  function withdrawCommunityStake(address stakee, uint96 amount) external {
+  function withdrawCommunityStake(address stakee, uint88 amount) external {
     if (communityStakes[msg.sender][stakee].unlockTime < block.timestamp) {
       revert StakeIsLocked();
     }
@@ -208,7 +211,7 @@ contract GitcoinIdentityStaking is
 
     for (uint256 i = 0; i < numSelfStakers; i++) {
       address staker = selfStakers[i];
-      uint96 slashedAmount = (percent * selfStakes[staker].amount) / 100;
+      uint88 slashedAmount = (percent * selfStakes[staker].amount) / 100;
       if (slashedAmount > selfStakes[staker].amount) {
         revert FundsNotAvailableToSlash();
       }
@@ -225,7 +228,7 @@ contract GitcoinIdentityStaking is
     for (uint256 i = 0; i < numCommunityStakers; i++) {
       address staker = communityStakers[i];
       address stakee = communityStakees[i];
-      uint96 slashedAmount = (percent *
+      uint88 slashedAmount = (percent *
         communityStakes[staker][stakee].amount) / 100;
       if (slashedAmount > communityStakes[staker][stakee].amount) {
         revert FundsNotAvailableToSlash();
@@ -261,7 +264,7 @@ contract GitcoinIdentityStaking is
       revert MinimumBurnRoundDurationNotMet();
     }
 
-    uint96 amountToBurn = totalSlashed[currentSlashRound - 1];
+    uint88 amountToBurn = totalSlashed[currentSlashRound - 1];
 
     if (amountToBurn > 0) {
       if (!gtc.transfer(burnAddress, amountToBurn)) {
@@ -278,7 +281,7 @@ contract GitcoinIdentityStaking is
   function release(
     address staker,
     address stakee,
-    uint96 amountToRelease,
+    uint88 amountToRelease,
     uint16 slashRound
   ) external onlyRole(RELEASER_ROLE) {
     if (slashRound < currentSlashRound - 1) {
@@ -296,7 +299,12 @@ contract GitcoinIdentityStaking is
     } else {
       if (amountToRelease > communityStakes[staker][stakee].slashedAmount) {
         revert FundsNotAvailableToRelease();
-    }
+      }
+      if (
+        communityStakes[staker][stakee].slashedInRound != slashRound
+      ) {
+        revert FundsNotAvailableToReleaseFromRound();
+      }
       communityStakes[staker][stakee].slashedAmount -= amountToRelease;
       communityStakes[staker][stakee].amount += amountToRelease;
     }
