@@ -243,8 +243,16 @@ contract GitcoinIdentityStaking is
       if (
         communityStakes[staker][stakee].slashedInRound != currentSlashRound
       ) {
+        if(communityStakes[staker][stakee].slashedInRound == currentSlashRound - 1) {
+          // If this is a slash from the previous round (not yet burned), move
+          // it to the current round
+          totalSlashed[currentSlashRound - 1] -= communityStakes[staker][stakee].slashedAmount;
+          totalSlashed[currentSlashRound] += communityStakes[staker][stakee].slashedAmount;
+        } else {
+          // Otherwise, this is a stale slash and can be overwritten
+          communityStakes[staker][stakee].slashedAmount = 0;
+        }
         communityStakes[staker][stakee].slashedInRound = currentSlashRound;
-        communityStakes[staker][stakee].slashedAmount = 0;
       }
       totalSlashed[currentSlashRound] += slashedAmount;
       communityStakes[staker][stakee].amount -= slashedAmount;
