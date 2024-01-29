@@ -21,18 +21,13 @@ contract GitcoinIdentityStaking is
 {
   using EnumerableSet for EnumerableSet.AddressSet;
 
-  error SlashProofHashNotFound();
-  error SlashProofHashNotValid();
-  error SlashProofHashAlreadyUsed();
   error FundsNotAvailableToRelease();
   error MinimumBurnRoundDurationNotMet();
   error AmountMustBeGreaterThanZero();
-  error UnlockTimeMustBeInTheFuture();
   error CannotStakeOnSelf();
   error FailedTransfer();
   error InvalidLockTime();
   error StakeIsLocked();
-  error NotOwnerOfStake();
   error AmountTooHigh();
   error StakerStakeeMismatch();
   error FundsNotAvailableToSlash();
@@ -137,7 +132,7 @@ contract GitcoinIdentityStaking is
   }
 
   function withdrawSelfStake(uint88 amount) external {
-    if (selfStakes[msg.sender].unlockTime < block.timestamp) {
+    if (selfStakes[msg.sender].unlockTime > block.timestamp) {
       revert StakeIsLocked();
     }
 
@@ -186,7 +181,7 @@ contract GitcoinIdentityStaking is
   }
 
   function withdrawCommunityStake(address stakee, uint88 amount) external {
-    if (communityStakes[msg.sender][stakee].unlockTime < block.timestamp) {
+    if (communityStakes[msg.sender][stakee].unlockTime > block.timestamp) {
       revert StakeIsLocked();
     }
 
