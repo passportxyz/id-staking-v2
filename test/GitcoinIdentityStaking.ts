@@ -1,7 +1,6 @@
 import { expect } from "chai";
 import { ethers } from "hardhat";
 import { time, reset } from "@nomicfoundation/hardhat-network-helpers";
-import { keccak256 } from "ethers";
 
 function shuffleArray(array: any[]) {
   for (let i = array.length - 1; i > 0; i--) {
@@ -13,35 +12,6 @@ function shuffleArray(array: any[]) {
 
 const fiveMinutes = 5 * 60;
 const twelveWeeksInSeconds = 12 * 7 * 24 * 60 * 60 + 1; // 12 weeks in seconds
-
-function makeSlashProof(slashMembers: any[][], slashNonce: string) {
-  const slashProof = ethers.keccak256(
-    ethers.AbiCoder.defaultAbiCoder().encode(
-      [
-        {
-          type: "tuple[]",
-          name: "SlashMember",
-          components: [
-            {
-              name: "account",
-              type: "address",
-              baseType: "address",
-            },
-            {
-              name: "amount",
-              type: "uint192",
-              baseType: "uint192",
-            },
-          ],
-        },
-        "bytes32",
-      ],
-      [slashMembers, slashNonce]
-    )
-  );
-
-  return slashProof;
-}
 
 describe("GitcoinIdentityStaking", function () {
   this.beforeEach(async function () {
@@ -55,13 +25,13 @@ describe("GitcoinIdentityStaking", function () {
     this.gtc = await GTC.deploy(
       this.owner.address,
       this.owner.address,
-      Math.floor(new Date().getTime() / 1000) + 4
+      Math.floor(new Date().getTime() / 1000) + 4,
     );
     const gtcAddress = await this.gtc.getAddress();
 
     const GitcoinIdentityStaking = await ethers.getContractFactory(
       "GitcoinIdentityStaking",
-      this.owner
+      this.owner,
     );
     this.gitcoinIdentityStaking = await GitcoinIdentityStaking.deploy();
     await this.gitcoinIdentityStaking
@@ -84,15 +54,31 @@ describe("GitcoinIdentityStaking", function () {
       [this.gitcoinIdentityStaking].map(async (gitcoinIdentityStaking: any) => {
         gitcoinIdentityStaking.grantRole(
           await gitcoinIdentityStaking.SLASHER_ROLE(),
-          this.owner.address
+          this.owner.address,
         );
         gitcoinIdentityStaking.grantRole(
           await gitcoinIdentityStaking.RELEASER_ROLE(),
-          this.owner.address
+          this.owner.address,
         );
+
+        const selfStakers: string[] = [];
+        const communityStakers: string[] = [];
+        const communityStakees: string[] = [];
 
         await Promise.all(
           userAccounts.map(async (userAccount: any, accountIdx: number) => {
+            selfStakers.push(userAccount.address);
+
+            communityStakers.push(userAccount.address);
+            communityStakees.push(this.userAccounts[accountIdx + 1].address);
+
+            communityStakers.push(userAccount.address);
+            communityStakees.push(
+              this.userAccounts[
+                accountIdx ? accountIdx - 1 : this.userAccounts.length - 1
+              ].address,
+            );
+
             // This changes the order of the transactions
             // which can affect gas. Randomizing to get an
             // average gas cost.
@@ -106,9 +92,9 @@ describe("GitcoinIdentityStaking", function () {
                 gitcoinIdentityStaking
                   .connect(userAccount)
                   .communityStake(
-                    this.userAccounts[accountIdx + 1],
+                    this.userAccounts[accountIdx + 1].address,
                     100000,
-                    twelveWeeksInSeconds
+                    twelveWeeksInSeconds,
                   ),
 
               () =>
@@ -117,68 +103,48 @@ describe("GitcoinIdentityStaking", function () {
                   .communityStake(
                     this.userAccounts[
                       accountIdx ? accountIdx - 1 : this.userAccounts.length - 1
-                    ],
+                    ].address,
                     100000,
-                    twelveWeeksInSeconds
+                    twelveWeeksInSeconds,
                   ),
             ])) {
               await func();
             }
-          })
+          }),
         );
 
-        const stakeIds: number[] = [];
-        let slashMembers: any[][] = [];
-
-        await Promise.all(
-          userAccounts
-            .slice(0, Math.floor((numUsers * 3) / 10))
-            .map(async (userAccount: any) => {
-              const stakeId = await gitcoinIdentityStaking.selfStakeIds(
-                userAccount.address,
-                0
-              );
-              const amount = (await gitcoinIdentityStaking.stakes(stakeId))[0];
-              slashMembers.push([userAccount.address, amount]);
-              stakeIds.push(stakeId);
-            })
-        );
-        slashMembers = slashMembers.sort((a, b) => (a[0] < b[0] ? -1 : 1));
-
-        const slashNonce = keccak256(Buffer.from(Math.random().toString()));
-
-        const slashProof = makeSlashProof(slashMembers, slashNonce);
+        const slashSelfStakers = selfStakers.slice(0, 20);
+        const slashCommunityStakers = communityStakers.slice(0, 40);
+        const slashCommunityStakees = communityStakees.slice(0, 40);
 
         await gitcoinIdentityStaking
           .connect(this.owner)
-          .slash(stakeIds, 50, slashProof);
-
-        await gitcoinIdentityStaking
-          .connect(this.owner)
-          .release(
-            slashMembers,
-            1,
-            500,
-            slashProof,
-            slashNonce,
-            ethers.keccak256(Buffer.from(Math.random().toString()))
+          .slash(
+            slashSelfStakers,
+            slashCommunityStakers,
+            slashCommunityStakees,
+            50,
           );
+
+        await gitcoinIdentityStaking
+          .connect(this.owner)
+          .release(selfStakers[0], selfStakers[0], 500, 1);
 
         await time.increase(60 * 60 * 24 * 91);
 
-        await gitcoinIdentityStaking.connect(this.owner).burn();
-      })
+        await gitcoinIdentityStaking.connect(this.owner).lockAndBurn();
+      }),
     );
   }).timeout(1000000);
 
   it("should reject burns too close together", async function () {
     await time.increase(60 * 60 * 24 * 91);
-    await this.gitcoinIdentityStaking.connect(this.owner).burn();
+    await this.gitcoinIdentityStaking.connect(this.owner).lockAndBurn();
     await expect(
-      this.gitcoinIdentityStaking.connect(this.owner).burn()
+      this.gitcoinIdentityStaking.connect(this.owner).lockAndBurn(),
     ).to.be.revertedWithCustomError(
       this.gitcoinIdentityStaking,
-      "MinimumBurnRoundDurationNotMet"
+      "MinimumBurnRoundDurationNotMet",
     );
   });
 
@@ -189,10 +155,10 @@ describe("GitcoinIdentityStaking", function () {
       await expect(
         this.gitcoinIdentityStaking
           .connect(this.userAccounts[0])
-          .selfStake(100000, unlockTime)
+          .selfStake(100000, unlockTime),
       ).to.be.revertedWithCustomError(
         this.gitcoinIdentityStaking,
-        "InvalidLockTime"
+        "InvalidLockTime",
       );
     });
 
@@ -202,10 +168,10 @@ describe("GitcoinIdentityStaking", function () {
       await expect(
         this.gitcoinIdentityStaking
           .connect(this.userAccounts[0])
-          .communityStake(this.userAccounts[1], 100000, unlockTime)
+          .communityStake(this.userAccounts[1], 100000, unlockTime),
       ).to.be.revertedWithCustomError(
         this.gitcoinIdentityStaking,
-        "InvalidLockTime"
+        "InvalidLockTime",
       );
     });
 
@@ -215,10 +181,10 @@ describe("GitcoinIdentityStaking", function () {
       await expect(
         this.gitcoinIdentityStaking
           .connect(this.userAccounts[0])
-          .selfStake(0, unlockTime)
+          .selfStake(0, unlockTime),
       ).to.be.revertedWithCustomError(
         this.gitcoinIdentityStaking,
-        "AmountMustBeGreaterThanZero"
+        "AmountMustBeGreaterThanZero",
       );
     });
 
@@ -228,10 +194,10 @@ describe("GitcoinIdentityStaking", function () {
       await expect(
         this.gitcoinIdentityStaking
           .connect(this.userAccounts[0])
-          .communityStake(this.userAccounts[1], 0, unlockTime)
+          .communityStake(this.userAccounts[1], 0, unlockTime),
       ).to.be.revertedWithCustomError(
         this.gitcoinIdentityStaking,
-        "AmountMustBeGreaterThanZero"
+        "AmountMustBeGreaterThanZero",
       );
     });
 
@@ -241,10 +207,10 @@ describe("GitcoinIdentityStaking", function () {
       await expect(
         this.gitcoinIdentityStaking
           .connect(this.userAccounts[0])
-          .communityStake(this.userAccounts[0], 100000, unlockTime)
+          .communityStake(this.userAccounts[0], 100000, unlockTime),
       ).to.be.revertedWithCustomError(
         this.gitcoinIdentityStaking,
-        "CannotStakeOnSelf"
+        "CannotStakeOnSelf",
       );
     });
   });
@@ -254,12 +220,16 @@ describe("GitcoinIdentityStaking", function () {
       const userAccounts = this.userAccounts.slice(0, 5);
       this.gitcoinIdentityStaking.grantRole(
         await this.gitcoinIdentityStaking.SLASHER_ROLE(),
-        this.owner.address
+        this.owner.address,
       );
       this.gitcoinIdentityStaking.grantRole(
         await this.gitcoinIdentityStaking.RELEASER_ROLE(),
-        this.owner.address
+        this.owner.address,
       );
+
+      const selfStakers: string[] = [];
+      const communityStakers: string[] = [];
+      const communityStakees: string[] = [];
 
       await Promise.all(
         userAccounts.map(async (userAccount: any, accountIdx: number) => {
@@ -271,218 +241,171 @@ describe("GitcoinIdentityStaking", function () {
             .communityStake(
               this.userAccounts[accountIdx + 1],
               100000,
-              twelveWeeksInSeconds
+              twelveWeeksInSeconds,
             );
-        })
+          selfStakers.push(userAccount.address);
+          communityStakers.push(userAccount.address);
+          communityStakees.push(this.userAccounts[accountIdx + 1].address);
+        }),
       );
+
+      this.selfStakers = selfStakers;
+      this.communityStakers = communityStakers;
+      this.communityStakees = communityStakees;
     });
 
     it("should slash stakes", async function () {
-      const stakeIds = [1, 2, 3];
+      const startingSelfStakeAmount = (
+        await this.gitcoinIdentityStaking.selfStakes(this.userAccounts[0])
+      )[1];
 
-      const startingStakeAmount = (
-        await this.gitcoinIdentityStaking.stakes(stakeIds[0])
-      )[0];
-
-      await this.gitcoinIdentityStaking
-        .connect(this.owner)
-        .slash(stakeIds, 50, ethers.keccak256(Buffer.from("notARealProof")));
-
-      const afterSlashStakeAmount = (
-        await this.gitcoinIdentityStaking.stakes(stakeIds[0])
-      )[0];
-
-      expect(afterSlashStakeAmount).to.equal(startingStakeAmount / BigInt(2));
-      expect(afterSlashStakeAmount).to.equal(BigInt(50000));
+      const startingCommunityStakeAmount = (
+        await this.gitcoinIdentityStaking.communityStakes(
+          this.userAccounts[0],
+          this.userAccounts[1],
+        )
+      )[1];
 
       await this.gitcoinIdentityStaking
         .connect(this.owner)
-        .slash(stakeIds, 80, ethers.keccak256(Buffer.from("anotherFakeProof")));
+        .slash(
+          this.selfStakers.slice(0, 2),
+          this.communityStakers.slice(0, 1),
+          this.communityStakees.slice(0, 1),
+          50,
+        );
 
-      const afterDoubleSlashStakeAmount = (
-        await this.gitcoinIdentityStaking.stakes(stakeIds[0])
-      )[0];
+      const afterSlashSelfStakeAmount = (
+        await this.gitcoinIdentityStaking.selfStakes(this.userAccounts[0])
+      )[1];
 
-      expect(afterDoubleSlashStakeAmount).to.equal(
-        startingStakeAmount / BigInt(2) / BigInt(5)
+      expect(afterSlashSelfStakeAmount).to.equal(
+        startingSelfStakeAmount / BigInt(2),
       );
-      expect(afterDoubleSlashStakeAmount).to.equal(BigInt(10000));
+      expect(afterSlashSelfStakeAmount).to.equal(BigInt(50000));
+
+      await this.gitcoinIdentityStaking
+        .connect(this.owner)
+        .slash(
+          this.selfStakers.slice(0, 2),
+          this.communityStakers.slice(0, 1),
+          this.communityStakees.slice(0, 1),
+          80,
+        );
+
+      const afterDoubleSlashSelfStakeAmount = (
+        await this.gitcoinIdentityStaking.selfStakes(this.userAccounts[0])
+      )[1];
+
+      expect(afterDoubleSlashSelfStakeAmount).to.equal(
+        startingSelfStakeAmount / BigInt(2) / BigInt(5),
+      );
+      expect(afterDoubleSlashSelfStakeAmount).to.equal(BigInt(10000));
+
+      const afterSlashCommunityStakeAmount = (
+        await this.gitcoinIdentityStaking.communityStakes(
+          this.userAccounts[0],
+          this.userAccounts[1],
+        )
+      )[1];
+
+      expect(afterSlashCommunityStakeAmount).to.equal(
+        startingCommunityStakeAmount / BigInt(2) / BigInt(5),
+      );
+
+      expect(afterSlashCommunityStakeAmount).to.equal(BigInt(10000));
     });
 
-    it("should reject slash with already used proof", async function () {
-      const stakeIds = [1, 2, 3];
-
-      const proof = ethers.keccak256(Buffer.from("notARealProof"));
-
-      await this.gitcoinIdentityStaking
-        .connect(this.owner)
-        .slash(stakeIds, 50, proof);
-
-      await expect(
-        this.gitcoinIdentityStaking
-          .connect(this.owner)
-          .slash(stakeIds, 50, proof)
-      ).to.be.revertedWithCustomError(
-        this.gitcoinIdentityStaking,
-        "SlashProofHashAlreadyUsed"
-      );
-    });
-
-    describe("with valid slashMembers", function () {
+    describe("slash tests", function () {
       beforeEach(async function () {
-        const stakeIds: number[] = [];
-        let slashMembers: any[][] = [];
+        const selfStakers: string[] = [];
+        const communityStakers: string[] = [];
+        const communityStakees: string[] = [];
 
         await Promise.all(
           this.userAccounts
             .slice(0, 3)
             .map(async (userAccount: any, index: number) => {
-              const selfStakeId =
-                await this.gitcoinIdentityStaking.selfStakeIds(
-                  userAccount.address,
-                  0
-                );
-              const selfStakeAmount = (
-                await this.gitcoinIdentityStaking.stakes(selfStakeId)
-              )[0];
+              selfStakers.push(userAccount.address);
 
-              slashMembers.push([userAccount.address, selfStakeAmount]);
-              stakeIds.push(selfStakeId);
+              communityStakers.push(userAccount.address);
+              communityStakees.push(this.userAccounts[index + 1].address);
 
-              const communityStakeId =
-                await this.gitcoinIdentityStaking.communityStakeIds(
-                  userAccount.address,
-                  this.userAccounts[index + 1].address,
-                  0
-                );
-
-              const communityStakeAmount = (
-                await this.gitcoinIdentityStaking.stakes(communityStakeId)
-              )[0];
-
-              slashMembers.push([
-                this.userAccounts[index + 1].address,
-                communityStakeAmount,
-              ]);
-              stakeIds.push(communityStakeId);
-            })
+              communityStakers.push(userAccount.address);
+              communityStakees.push(
+                this.userAccounts[
+                  index ? index - 1 : this.userAccounts.length - 1
+                ].address,
+              );
+            }),
         );
 
-        slashMembers = slashMembers.sort((a, b) => (a[0] < b[0] ? -1 : 1));
-
-        this.slashMembers = slashMembers;
-        this.stakeIds = stakeIds;
-        this.slashNonce = keccak256(Buffer.from(Math.random().toString()));
-        this.slashProof = makeSlashProof(this.slashMembers, this.slashNonce);
+        this.selfStakers = selfStakers;
+        this.communityStakers = communityStakers;
+        this.communityStakees = communityStakees;
       });
 
       it("should release given a valid proof", async function () {
         await this.gitcoinIdentityStaking
           .connect(this.owner)
-          .slash(this.stakeIds, 50, this.slashProof);
-
-        const indexToRelease = 1;
-
-        const newNonce = keccak256(Buffer.from(Math.random().toString()));
+          .slash(
+            this.selfStakers,
+            this.communityStakers,
+            this.communityStakees,
+            50,
+          );
 
         await this.gitcoinIdentityStaking
           .connect(this.owner)
-          .release(
-            this.slashMembers,
-            indexToRelease,
-            500,
-            this.slashProof,
-            this.slashNonce,
-            newNonce
-          );
-
-        this.slashMembers[indexToRelease][1] -= BigInt(500);
-
-        const newSlashProof = makeSlashProof(this.slashMembers, newNonce);
+          .release(this.communityStakers[0], this.communityStakees[0], 250, 1);
 
         await this.gitcoinIdentityStaking
           .connect(this.owner)
-          .release(
-            this.slashMembers,
-            2,
-            1000,
-            newSlashProof,
-            newNonce,
-            keccak256(Buffer.from(Math.random().toString()))
-          );
+          .release(this.communityStakers[0], this.communityStakees[0], 250, 1);
       });
 
-      it("should reject release with an invalid proof", async function () {
-        await this.gitcoinIdentityStaking
-          .connect(this.owner)
-          .slash(this.stakeIds, 50, this.slashProof);
-
-        [this.slashMembers[0], this.slashMembers[1]] = [
-          this.slashMembers[1],
-          this.slashMembers[0],
-        ];
-
+      it("should reject release for an un-slashed user", async function () {
         await expect(
           this.gitcoinIdentityStaking
             .connect(this.owner)
-            .release(
-              this.slashMembers,
-              1,
-              500,
-              this.slashProof,
-              this.slashNonce,
-              keccak256(Buffer.from(Math.random().toString()))
-            )
+            .release(this.selfStakers[0], this.selfStakers[0], 500, 1),
         ).to.be.revertedWithCustomError(
           this.gitcoinIdentityStaking,
-          "SlashProofHashNotValid"
+          "FundsNotAvailableToRelease",
         );
       });
 
       it("should reject release for too high of an amount", async function () {
         await this.gitcoinIdentityStaking
           .connect(this.owner)
-          .slash(this.stakeIds, 50, this.slashProof);
-
-        const indexToRelease = 1;
+          .slash(
+            this.selfStakers,
+            this.communityStakers,
+            this.communityStakees,
+            50,
+          );
 
         await expect(
           this.gitcoinIdentityStaking
             .connect(this.owner)
-            .release(
-              this.slashMembers,
-              indexToRelease,
-              this.slashMembers[indexToRelease][1] + BigInt(1),
-              this.slashProof,
-              this.slashNonce,
-              keccak256(Buffer.from(Math.random().toString()))
-            )
+            .release(this.selfStakers[0], this.selfStakers[0], 50000000000, 1),
         ).to.be.revertedWithCustomError(
           this.gitcoinIdentityStaking,
-          "FundsNotAvailableToRelease"
+          "FundsNotAvailableToRelease",
         );
       });
-    });
 
-    it("should reject release with an unregistered proof", async function () {
-      const slashNonce = keccak256(Buffer.from(Math.random().toString()));
-      const slashProof = keccak256(Buffer.from("notARealProof"));
+      describe("when a user is slashed, then two burns occur, and then user is slashed again", async function () {
+        it("should overwrite old, burned stake", async function () {
+          // TODO add this test
+        });
+      });
 
-      await expect(
-        this.gitcoinIdentityStaking
-          .connect(this.owner)
-          .release(
-            [],
-            1,
-            500,
-            slashProof,
-            slashNonce,
-            ethers.keccak256(Buffer.from(Math.random().toString()))
-          )
-      ).to.be.revertedWithCustomError(
-        this.gitcoinIdentityStaking,
-        "SlashProofHashNotFound"
-      );
+      describe("when a user is slashed, then one burn occurs, and then user is slashed again", async function () {
+        it("should move old, frozen to current round and update stake totals accordingly", async function () {
+          // TODO add this test
+        });
+      });
     });
   });
 
@@ -491,75 +414,93 @@ describe("GitcoinIdentityStaking", function () {
       const fiveMinutes = 5 * 60; // 5 minutes in seconds
       const unlockTime =
         twelveWeeksInSeconds + Math.floor(new Date().getTime() / 1000);
+
       await this.gitcoinIdentityStaking
         .connect(this.userAccounts[0])
         .selfStake(100000n, twelveWeeksInSeconds);
 
-      const userStake = await this.gitcoinIdentityStaking.selfStakeIds(
+      const stake = await this.gitcoinIdentityStaking.selfStakes(
         this.userAccounts[0],
-        0
       );
 
-      const stake = await this.gitcoinIdentityStaking.stakes(userStake);
-
-      expect(stake[0]).to.deep.equal(100000n);
-      expect(stake[1]).to.be.closeTo(unlockTime, fiveMinutes);
+      expect(stake[0]).to.be.closeTo(unlockTime, fiveMinutes);
+      expect(stake[1]).to.deep.equal(100000n);
+      expect(stake[2]).to.deep.equal(0n);
+      expect(stake[3]).to.deep.equal(0n);
     });
+
     it("should allow withdrawal of self stake", async function () {
       await this.gitcoinIdentityStaking
         .connect(this.userAccounts[0])
         .selfStake(100000n, twelveWeeksInSeconds);
-      await time.increaseTo(
-        twelveWeeksInSeconds + Math.floor(new Date().getTime() / 1000)
-      );
+
+      await time.increase(twelveWeeksInSeconds + 1);
 
       await this.gitcoinIdentityStaking
         .connect(this.userAccounts[0])
         .withdrawSelfStake(1);
+
+      // TODO check balances
     });
+
     it("should allow community staking", async function () {
       const unlockTime =
         twelveWeeksInSeconds + Math.floor(new Date().getTime() / 1000);
       await this.gitcoinIdentityStaking
         .connect(this.userAccounts[0])
         .communityStake(this.userAccounts[1], 100000n, twelveWeeksInSeconds);
-      const communityStake =
-        await this.gitcoinIdentityStaking.communityStakeIds(
-          this.userAccounts[0],
-          this.userAccounts[1],
-          0
-        );
 
-      const stake = await this.gitcoinIdentityStaking.stakes(communityStake);
+      const stake = await this.gitcoinIdentityStaking.communityStakes(
+        this.userAccounts[0],
+        this.userAccounts[1],
+      );
 
-      expect(stake[0]).to.deep.equal(100000n);
-      expect(stake[1]).to.be.closeTo(unlockTime, fiveMinutes);
+      expect(stake[0]).to.be.closeTo(unlockTime, fiveMinutes);
+      expect(stake[1]).to.deep.equal(100000n);
+      expect(stake[2]).to.deep.equal(0n);
+      expect(stake[3]).to.deep.equal(0n);
     });
-    it("should allow withdrawal of self stake", async function () {
+
+    it("should allow withdrawal of community stake", async function () {
+      await this.gitcoinIdentityStaking
+        .connect(this.userAccounts[0])
+        .communityStake(this.userAccounts[1], 100000n, twelveWeeksInSeconds);
+
+      await time.increase(twelveWeeksInSeconds + 1);
+
+      await this.gitcoinIdentityStaking
+        .connect(this.userAccounts[0])
+        .withdrawCommunityStake(this.userAccounts[1], 100000n);
+
+      // TODO check balances
+    });
+    it("should not allow withdrawal of self stake before unlock time", async function () {
       await this.gitcoinIdentityStaking
         .connect(this.userAccounts[0])
         .selfStake(100000n, twelveWeeksInSeconds);
-      await time.increaseTo(
-        twelveWeeksInSeconds + Math.floor(new Date().getTime() / 1000)
-      );
 
+      await expect(
+        this.gitcoinIdentityStaking
+          .connect(this.userAccounts[0])
+          .withdrawSelfStake(1),
+      ).to.be.revertedWithCustomError(
+        this.gitcoinIdentityStaking,
+        "StakeIsLocked",
+      );
+    });
+    it("should not allow withdrawal of community stake before unlock time", async function () {
       await this.gitcoinIdentityStaking
         .connect(this.userAccounts[0])
-        .withdrawSelfStake(1);
+        .communityStake(this.userAccounts[1], 100000n, twelveWeeksInSeconds);
+
+      await expect(
+        this.gitcoinIdentityStaking
+          .connect(this.userAccounts[0])
+          .withdrawCommunityStake(this.userAccounts[1], 100000n),
+      ).to.be.revertedWithCustomError(
+        this.gitcoinIdentityStaking,
+        "StakeIsLocked",
+      );
     });
-    // it("should not allow withdrawal of self stake before unlock time", async function () {
-    //   await this.gitcoinIdentityStaking
-    //     .connect(this.userAccounts[0])
-    //     .selfStake(100000n, twelveWeeksInSeconds);
-    //   await time.increaseTo(10000 + Math.floor(new Date().getTime() / 1000));
-    //   await expect(
-    //     this.gitcoinIdentityStaking
-    //       .connect(this.userAccounts[0])
-    //       .withdrawSelfStake(1)
-    //   ).to.be.revertedWithCustomError(
-    //     this.gitcoinIdentityStaking,
-    //     "StakeIsLocked"
-    //   );
-    // });
   });
 });

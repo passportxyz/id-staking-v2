@@ -3,56 +3,53 @@ pragma solidity ^0.8.23;
 
 import {Initializable, AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
-import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
-import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
+import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol";
+// TODO Should we use IERC20 instead? It looks like the ABI matches for the functions we use
 import {GTC} from "./mocks/GTC.sol";
 
 /**
  * @title GitcoinIdentityStaking
  * @notice This contract is used to stake GTC on self/community identity
  */
-
-// Control
 contract GitcoinIdentityStaking is
   Initializable,
   UUPSUpgradeable,
-  // TODO: double check this.
-  // AccessControlUpgradeable,
-  AccessControl,
-  Pausable
+  AccessControlUpgradeable,
+  PausableUpgradeable
 {
   using EnumerableSet for EnumerableSet.AddressSet;
 
-  error SlashProofHashNotFound();
-  error SlashProofHashNotValid();
-  error SlashProofHashAlreadyUsed();
   error FundsNotAvailableToRelease();
   error MinimumBurnRoundDurationNotMet();
   error AmountMustBeGreaterThanZero();
-  error UnlockTimeMustBeInTheFuture();
   error CannotStakeOnSelf();
   error FailedTransfer();
   error InvalidLockTime();
   error StakeIsLocked();
-  error NotOwnerOfStake();
+  error AmountTooHigh();
+  error StakerStakeeMismatch();
+  error FundsNotAvailableToSlash();
+  error FundsNotAvailableToReleaseFromRound();
+  error RoundAlreadyBurned();
 
   bytes32 public constant SLASHER_ROLE = keccak256("SLASHER_ROLE");
   bytes32 public constant RELEASER_ROLE = keccak256("RELEASER_ROLE");
 
+  // uint88s Can hold up to 300 million w/ 18 decimals, or 3x the current max supply
   struct Stake {
-    uint192 amount;
     uint64 unlockTime;
+    uint88 amount;
+    uint88 slashedAmount;
+    uint16 slashedInRound;
   }
 
-  // TODO func selfStakeIdsLength(address) => uint256
-  mapping(address => uint256[]) public selfStakeIds;
-  mapping(address => mapping(address => uint256[])) public communityStakeIds;
+  mapping(address => uint88) public userTotalStaked;
 
-  mapping(uint256 stakeId => Stake) public stakes;
-  uint256 public stakeCount;
+  mapping(address => Stake) public selfStakes;
+  mapping(address => mapping(address => Stake)) public communityStakes;
 
-  uint256 public currentSlashRound = 1;
+  uint16 public currentSlashRound = 1;
 
   uint64 public burnRoundMinimumDuration = 90 days;
 
@@ -60,56 +57,32 @@ contract GitcoinIdentityStaking is
 
   address public burnAddress;
 
-  mapping(uint256 round => uint192 amount) public totalSlashed;
+  mapping(uint256 => uint88) public totalSlashed;
 
-  // Used to permit unfreeze
-  mapping(bytes32 => bool) public slashProofHashes;
-
-  event SelfStake(
-    uint256 indexed id,
-    address indexed staker,
-    uint192 amount,
-    uint64 unlockTime
-  );
+  event SelfStake(address indexed staker, uint88 amount, uint64 unlockTime);
 
   event CommunityStake(
-    uint256 indexed id,
     address indexed staker,
     address indexed stakee,
-    uint192 amount,
+    uint88 amount,
     uint64 unlockTime
   );
 
-  event SelfStakeWithdrawn(
-    uint256 indexed id,
-    address indexed staker,
-    uint192 amount
-  );
+  event SelfStakeWithdrawn(address indexed staker, uint88 amount);
 
-  event CommunityStakeWithdrawn(
-    uint256 indexed id,
-    address indexed staker,
-    address indexed stakee,
-    uint192 amount
-  );
+  event CommunityStakeWithdrawn(address indexed staker, address indexed stakee, uint88 amount);
 
-  event Slash(
-    address indexed slasher,
-    uint64 slashedPercent,
-    bytes32 slashProofHash
-  );
+  event Slash(address indexed staker, uint88 amount, uint16 round);
 
-  event Burn(uint256 indexed round, uint192 amount);
+  event LockAndBurn(uint16 indexed round, uint88 amount);
 
   GTC public gtc;
 
-  function initialize(
-    address gtcAddress,
-    address _burnAddress
-  ) public initializer {
+  function initialize(address gtcAddress, address _burnAddress) public initializer {
     _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
 
-    // __AccessControl_init();
+    __AccessControl_init();
+    __Pausable_init();
 
     gtc = GTC(gtcAddress);
     burnAddress = _burnAddress;
@@ -117,7 +90,7 @@ contract GitcoinIdentityStaking is
     lastBurnTimestamp = block.timestamp;
   }
 
-  function selfStake(uint192 amount, uint64 duration) external {
+  function selfStake(uint88 amount, uint64 duration) external {
     // revert if amount is 0. Since this value is unsigned integer
     if (amount == 0) {
       revert AmountMustBeGreaterThanZero();
@@ -125,63 +98,39 @@ contract GitcoinIdentityStaking is
 
     uint64 unlockTime = duration + uint64(block.timestamp);
 
-    if (
-      unlockTime < block.timestamp + 12 weeks ||
-      unlockTime > block.timestamp + 104 weeks
-    ) {
+    if (unlockTime < block.timestamp + 12 weeks || unlockTime > block.timestamp + 104 weeks) {
       revert InvalidLockTime();
     }
 
-    uint256 stakeId = ++stakeCount;
-    stakes[stakeId].amount = amount;
-    stakes[stakeId].unlockTime = unlockTime;
-
-    selfStakeIds[msg.sender].push(stakeId);
+    selfStakes[msg.sender].amount += amount;
+    selfStakes[msg.sender].unlockTime = unlockTime;
+    userTotalStaked[msg.sender] += amount;
 
     if (!gtc.transferFrom(msg.sender, address(this), amount)) {
       revert FailedTransfer();
     }
 
-    emit SelfStake(stakeId, msg.sender, amount, unlockTime);
+    emit SelfStake(msg.sender, amount, unlockTime);
   }
 
-  function ownerOfStake(address staker, uint value) public view returns (bool) {
-    uint[] memory currentStakes = selfStakeIds[staker];
-    for (uint i = 0; i < currentStakes.length; i++) {
-      if (currentStakes[i] == value) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  function withdrawSelfStake(uint256 stakeId) external {
-    if (!ownerOfStake(msg.sender, stakeId)) {
-      revert NotOwnerOfStake();
-    }
-
-    if (stakes[stakeId].unlockTime < block.timestamp) {
+  function withdrawSelfStake(uint88 amount) external {
+    if (selfStakes[msg.sender].unlockTime > block.timestamp) {
       revert StakeIsLocked();
     }
 
-    if (selfStakeIds[msg.sender].length == 0) {
-      revert CannotStakeOnSelf();
+    if (amount > selfStakes[msg.sender].amount) {
+      revert AmountTooHigh();
     }
 
-    uint192 amount = stakes[stakeId].amount;
-
-    delete stakes[stakeId];
+    selfStakes[msg.sender].amount -= amount;
+    userTotalStaked[msg.sender] -= amount;
 
     gtc.transfer(msg.sender, amount);
 
-    emit SelfStakeWithdrawn(stakeId, msg.sender, amount);
+    emit SelfStakeWithdrawn(msg.sender, amount);
   }
 
-  function communityStake(
-    address stakee,
-    uint192 amount,
-    uint64 duration
-  ) external {
+  function communityStake(address stakee, uint88 amount, uint64 duration) external {
     if (stakee == msg.sender) {
       revert CannotStakeOnSelf();
     }
@@ -191,79 +140,123 @@ contract GitcoinIdentityStaking is
 
     uint64 unlockTime = duration + uint64(block.timestamp);
 
-    if (
-      unlockTime < block.timestamp + 12 weeks ||
-      unlockTime > block.timestamp + 104 weeks
-    ) {
+    if (unlockTime < block.timestamp + 12 weeks || unlockTime > block.timestamp + 104 weeks) {
       revert InvalidLockTime();
     }
 
-    uint256 stakeId = ++stakeCount;
-    stakes[stakeId].amount = amount;
-    stakes[stakeId].unlockTime = uint64(unlockTime);
-
-    communityStakeIds[msg.sender][stakee].push(stakeId);
+    communityStakes[msg.sender][stakee].amount += amount;
+    communityStakes[msg.sender][stakee].unlockTime = unlockTime;
+    userTotalStaked[msg.sender] += amount;
 
     if (!gtc.transferFrom(msg.sender, address(this), amount)) {
       revert FailedTransfer();
     }
 
-    emit CommunityStake(stakeId, msg.sender, stakee, amount, unlockTime);
+    emit CommunityStake(msg.sender, stakee, amount, unlockTime);
   }
 
-  function ownerOfCommunityStake(
-    address staker,
-    address stakee,
-    uint value
-  ) public view returns (bool) {
-    uint[] memory currentStakes = communityStakeIds[staker][stakee];
-    for (uint i = 0; i < currentStakes.length; i++) {
-      if (currentStakes[i] == value) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  function withdrawCommunityStake(address stakee, uint256 stakeId) external {
-    if (!ownerOfCommunityStake(msg.sender, stakee, stakeId)) {
-      revert NotOwnerOfStake();
-    }
-
-    if (stakes[stakeId].unlockTime < block.timestamp) {
+  function withdrawCommunityStake(address stakee, uint88 amount) external {
+    if (communityStakes[msg.sender][stakee].unlockTime > block.timestamp) {
       revert StakeIsLocked();
     }
 
-    uint192 amount = stakes[stakeId].amount;
+    if (amount > communityStakes[msg.sender][stakee].amount) {
+      revert AmountTooHigh();
+    }
 
-    delete stakes[stakeId];
+    communityStakes[msg.sender][stakee].amount -= amount;
+    userTotalStaked[msg.sender] -= amount;
 
     gtc.transfer(msg.sender, amount);
 
-    emit SelfStakeWithdrawn(stakeId, msg.sender, amount);
+    emit CommunityStakeWithdrawn(msg.sender, stakee, amount);
   }
 
   function slash(
-    uint256[] calldata stakeIds,
-    uint64 slashedPercent,
-    bytes32 slashProofHash
+    address[] calldata selfStakers,
+    address[] calldata communityStakers,
+    address[] calldata communityStakees,
+    uint64 percent
   ) external onlyRole(SLASHER_ROLE) {
-    if (slashProofHashes[slashProofHash]) {
-      revert SlashProofHashAlreadyUsed();
+    uint256 numSelfStakers = selfStakers.length;
+    uint256 numCommunityStakers = communityStakers.length;
+
+    if (numCommunityStakers != communityStakees.length) {
+      revert StakerStakeeMismatch();
     }
 
-    uint256 numStakes = stakeIds.length;
+    for (uint256 i = 0; i < numSelfStakers; i++) {
+      address staker = selfStakers[i];
+      uint88 slashedAmount = (percent * selfStakes[staker].amount) / 100;
 
-    for (uint256 i = 0; i < numStakes; i++) {
-      uint256 stakeId = stakeIds[i];
-      uint192 slashedAmount = (slashedPercent * stakes[stakeId].amount) / 100;
+      if (slashedAmount > selfStakes[staker].amount) {
+        revert FundsNotAvailableToSlash();
+      }
+
+      if (
+        selfStakes[staker].slashedInRound != 0 &&
+        selfStakes[staker].slashedInRound != currentSlashRound
+      ) {
+        if (selfStakes[staker].slashedInRound == currentSlashRound - 1) {
+          // If this is a slash from the previous round (not yet burned), move
+          // it to the current round (yes this is kind of annoying, but in order
+          // to attack this the user needs to keep getting slashed each round, which
+          // is costly for the attacker likely for no gain)
+          totalSlashed[currentSlashRound - 1] -= selfStakes[staker].slashedAmount;
+          totalSlashed[currentSlashRound] += selfStakes[staker].slashedAmount;
+        } else {
+          // Otherwise, this is a stale slash and can be overwritten
+          selfStakes[staker].slashedAmount = 0;
+        }
+      }
+
       totalSlashed[currentSlashRound] += slashedAmount;
-      stakes[stakeId].amount -= slashedAmount;
+
+      selfStakes[staker].slashedInRound = currentSlashRound;
+      selfStakes[staker].slashedAmount += slashedAmount;
+      selfStakes[staker].amount -= slashedAmount;
+
+      userTotalStaked[staker] -= slashedAmount;
+
+      emit Slash(staker, slashedAmount, currentSlashRound);
     }
 
-    slashProofHashes[slashProofHash] = true;
+    for (uint256 i = 0; i < numCommunityStakers; i++) {
+      address staker = communityStakers[i];
+      address stakee = communityStakees[i];
+      uint88 slashedAmount = (percent * communityStakes[staker][stakee].amount) / 100;
 
-    emit Slash(msg.sender, slashedPercent, slashProofHash);
+      if (slashedAmount > communityStakes[staker][stakee].amount) {
+        revert FundsNotAvailableToSlash();
+      }
+
+      if (
+        communityStakes[staker][stakee].slashedInRound != 0 &&
+        communityStakes[staker][stakee].slashedInRound != currentSlashRound
+      ) {
+        if (communityStakes[staker][stakee].slashedInRound == currentSlashRound - 1) {
+          // If this is a slash from the previous round (not yet burned), move
+          // it to the current round (yes this is kind of annoying, but in order
+          // to attack this the user needs to keep getting slashed each round, which
+          // is costly for the attacker likely for no gain)
+          totalSlashed[currentSlashRound - 1] -= communityStakes[staker][stakee].slashedAmount;
+          totalSlashed[currentSlashRound] += communityStakes[staker][stakee].slashedAmount;
+        } else {
+          // Otherwise, this is a stale slash and can be overwritten
+          communityStakes[staker][stakee].slashedAmount = 0;
+        }
+      }
+
+      totalSlashed[currentSlashRound] += slashedAmount;
+
+      communityStakes[staker][stakee].slashedInRound = currentSlashRound;
+      communityStakes[staker][stakee].slashedAmount += slashedAmount;
+      communityStakes[staker][stakee].amount -= slashedAmount;
+
+      userTotalStaked[staker] -= slashedAmount;
+
+      emit Slash(staker, slashedAmount, currentSlashRound);
+    }
   }
 
   // Burn last round and start next round (locking this round)
@@ -279,12 +272,12 @@ contract GitcoinIdentityStaking is
   // - the current round becomes the previous round, and a new round
   //   is initiated
   // On the very first call, nothing will be burned
-  function burn() external {
+  function lockAndBurn() external {
     if (block.timestamp - lastBurnTimestamp < burnRoundMinimumDuration) {
       revert MinimumBurnRoundDurationNotMet();
     }
 
-    uint192 amountToBurn = totalSlashed[currentSlashRound - 1];
+    uint88 amountToBurn = totalSlashed[currentSlashRound - 1];
 
     if (amountToBurn > 0) {
       if (!gtc.transfer(burnAddress, amountToBurn)) {
@@ -292,57 +285,52 @@ contract GitcoinIdentityStaking is
       }
     }
 
-    emit Burn(currentSlashRound - 1, amountToBurn);
+    emit LockAndBurn(currentSlashRound - 1, amountToBurn);
 
     currentSlashRound++;
     lastBurnTimestamp = block.timestamp;
   }
 
-  struct SlashMember {
-    address account;
-    uint192 amount;
-  }
-
-  // The nonce is used in the proof in case we need to
-  // do the exact same slash multiple times
   function release(
-    SlashMember[] calldata slashMembers,
-    uint256 slashMemberIndex,
-    uint192 amountToRelease,
-    bytes32 slashProofHash,
-    bytes32 nonce,
-    bytes32 newNonce
+    address staker,
+    address stakee,
+    uint88 amountToRelease,
+    uint16 slashRound
   ) external onlyRole(RELEASER_ROLE) {
-    if (!slashProofHashes[slashProofHash]) {
-      revert SlashProofHashNotFound();
-    }
-    if (keccak256(abi.encode(slashMembers, nonce)) != slashProofHash) {
-      revert SlashProofHashNotValid();
+    if (slashRound < currentSlashRound - 1) {
+      revert RoundAlreadyBurned();
     }
 
-    SlashMember memory slashMemberToRelease = slashMembers[slashMemberIndex];
-
-    if (amountToRelease > slashMemberToRelease.amount) {
-      revert FundsNotAvailableToRelease();
+    if (totalSlashed[slashRound] < amountToRelease) {
+      revert FundsNotAvailableToReleaseFromRound();
     }
 
-    SlashMember[] memory newSlashMembers = slashMembers;
+    if (staker == stakee) {
+      if (amountToRelease > selfStakes[staker].slashedAmount) {
+        revert FundsNotAvailableToRelease();
+      }
 
-    newSlashMembers[slashMemberIndex].amount -= amountToRelease;
+      if (selfStakes[staker].slashedInRound != slashRound) {
+        revert FundsNotAvailableToReleaseFromRound();
+      }
 
-    bytes32 newSlashProofHash = keccak256(
-      abi.encode(newSlashMembers, newNonce)
-    );
+      selfStakes[staker].slashedAmount -= amountToRelease;
+      selfStakes[staker].amount += amountToRelease;
+    } else {
+      if (amountToRelease > communityStakes[staker][stakee].slashedAmount) {
+        revert FundsNotAvailableToRelease();
+      }
 
-    slashProofHashes[slashProofHash] = false;
-    slashProofHashes[newSlashProofHash] = true;
+      if (communityStakes[staker][stakee].slashedInRound != slashRound) {
+        revert FundsNotAvailableToReleaseFromRound();
+      }
 
-    if (!gtc.transfer(slashMemberToRelease.account, amountToRelease)) {
-      revert FailedTransfer();
+      communityStakes[staker][stakee].slashedAmount -= amountToRelease;
+      communityStakes[staker][stakee].amount += amountToRelease;
     }
+
+    totalSlashed[slashRound] -= amountToRelease;
   }
 
-  function _authorizeUpgrade(
-    address
-  ) internal override onlyRole(DEFAULT_ADMIN_ROLE) {}
+  function _authorizeUpgrade(address) internal override onlyRole(DEFAULT_ADMIN_ROLE) {}
 }
