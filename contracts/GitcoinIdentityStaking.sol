@@ -74,7 +74,7 @@ contract GitcoinIdentityStaking is
 
   event Slash(address indexed staker, uint88 amount, uint16 round);
 
-  event LockAndBurn(uint256 indexed round, uint88 amount);
+  event LockAndBurn(uint16 indexed round, uint88 amount);
 
   GTC public gtc;
 
