@@ -75,9 +75,9 @@ describe("GitcoinIdentityStaking", function () {
     }
   });
 
-  it("gas tests", async function () {
-    // const numUsers = 200;
-    const numUsers = 20;
+  it.only("gas tests", async function () {
+    const numUsers = 200;
+    // const numUsers = 20;
     const userAccounts = this.userAccounts.slice(0, numUsers);
 
     await Promise.all(
@@ -91,8 +91,24 @@ describe("GitcoinIdentityStaking", function () {
           this.owner.address
         );
 
+        const selfStakers: string[] = [];
+        const communityStakers: string[] = [];
+        const communityStakees: string[] = [];
+
         await Promise.all(
           userAccounts.map(async (userAccount: any, accountIdx: number) => {
+            selfStakers.push(userAccount.address);
+
+            communityStakers.push(userAccount.address);
+            communityStakees.push(this.userAccounts[accountIdx + 1].address);
+
+            communityStakers.push(userAccount.address);
+            communityStakees.push(
+              this.userAccounts[
+                accountIdx ? accountIdx - 1 : this.userAccounts.length - 1
+              ].address
+            );
+
             // This changes the order of the transactions
             // which can affect gas. Randomizing to get an
             // average gas cost.
@@ -106,7 +122,7 @@ describe("GitcoinIdentityStaking", function () {
                 gitcoinIdentityStaking
                   .connect(userAccount)
                   .communityStake(
-                    this.userAccounts[accountIdx + 1],
+                    this.userAccounts[accountIdx + 1].address,
                     100000,
                     twelveWeeksInSeconds
                   ),
@@ -117,7 +133,7 @@ describe("GitcoinIdentityStaking", function () {
                   .communityStake(
                     this.userAccounts[
                       accountIdx ? accountIdx - 1 : this.userAccounts.length - 1
-                    ],
+                    ].address,
                     100000,
                     twelveWeeksInSeconds
                   ),
@@ -127,46 +143,26 @@ describe("GitcoinIdentityStaking", function () {
           })
         );
 
-        const stakeIds: number[] = [];
-        let slashMembers: any[][] = [];
-
-        await Promise.all(
-          userAccounts
-            .slice(0, Math.floor((numUsers * 3) / 10))
-            .map(async (userAccount: any) => {
-              const stakeId = await gitcoinIdentityStaking.selfStakeIds(
-                userAccount.address,
-                0
-              );
-              const amount = (await gitcoinIdentityStaking.stakes(stakeId))[0];
-              slashMembers.push([userAccount.address, amount]);
-              stakeIds.push(stakeId);
-            })
-        );
-        slashMembers = slashMembers.sort((a, b) => (a[0] < b[0] ? -1 : 1));
-
-        const slashNonce = keccak256(Buffer.from(Math.random().toString()));
-
-        const slashProof = makeSlashProof(slashMembers, slashNonce);
+        const slashSelfStakers = selfStakers.slice(0, 20);
+        const slashCommunityStakers = communityStakers.slice(0, 40);
+        const slashCommunityStakees = communityStakees.slice(0, 40);
 
         await gitcoinIdentityStaking
           .connect(this.owner)
-          .slash(stakeIds, 50, slashProof);
-
-        await gitcoinIdentityStaking
-          .connect(this.owner)
-          .release(
-            slashMembers,
-            1,
-            500,
-            slashProof,
-            slashNonce,
-            ethers.keccak256(Buffer.from(Math.random().toString()))
+          .slash(
+            slashSelfStakers,
+            slashCommunityStakers,
+            slashCommunityStakees,
+            50
           );
+
+        await gitcoinIdentityStaking
+          .connect(this.owner)
+          .release(selfStakers[0], selfStakers[0], 500, 1);
 
         await time.increase(60 * 60 * 24 * 91);
 
-        await gitcoinIdentityStaking.connect(this.owner).burn();
+        await gitcoinIdentityStaking.connect(this.owner).lockAndBurn();
       })
     );
   }).timeout(1000000);

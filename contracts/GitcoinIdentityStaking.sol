@@ -137,7 +137,7 @@ contract GitcoinIdentityStaking is
   }
 
   function withdrawSelfStake(uint88 amount) external {
-    if (selfStakes[msg.sender].unlockTime > block.timestamp) {
+    if (selfStakes[msg.sender].unlockTime < block.timestamp) {
       revert StakeIsLocked();
     }
 
@@ -222,9 +222,19 @@ contract GitcoinIdentityStaking is
         revert FundsNotAvailableToSlash();
       }
       if (selfStakes[staker].slashedInRound != currentSlashRound) {
-        selfStakes[staker].slashedInRound = currentSlashRound;
-        selfStakes[staker].slashedAmount = 0;
+        if (selfStakes[staker].slashedInRound == currentSlashRound - 1) {
+          // If this is a slash from the previous round (not yet burned), move
+          // it to the current round (yes this is kind of annoying, but in order 
+          // to attack this the user needs to keep getting slashed each round, which 
+          // is costly for the attacker likely for no gain)
+          totalSlashed[currentSlashRound - 1] -= selfStakes[staker].slashedAmount;
+          totalSlashed[currentSlashRound] += selfStakes[staker].slashedAmount;
+        } else {
+          // Otherwise, this is a stale slash and can be overwritten
+          selfStakes[staker].slashedAmount = 0;
+        }
       }
+      selfStakes[staker].slashedInRound = currentSlashRound;
       totalSlashed[currentSlashRound] += slashedAmount;
       selfStakes[staker].amount -= slashedAmount;
       userTotalStaked[staker] -= slashedAmount;
@@ -243,17 +253,19 @@ contract GitcoinIdentityStaking is
       if (
         communityStakes[staker][stakee].slashedInRound != currentSlashRound
       ) {
-        if(communityStakes[staker][stakee].slashedInRound == currentSlashRound - 1) {
+        if (communityStakes[staker][stakee].slashedInRound == currentSlashRound - 1) {
           // If this is a slash from the previous round (not yet burned), move
-          // it to the current round
+          // it to the current round (yes this is kind of annoying, but in order 
+          // to attack this the user needs to keep getting slashed each round, which 
+          // is costly for the attacker likely for no gain)
           totalSlashed[currentSlashRound - 1] -= communityStakes[staker][stakee].slashedAmount;
           totalSlashed[currentSlashRound] += communityStakes[staker][stakee].slashedAmount;
         } else {
           // Otherwise, this is a stale slash and can be overwritten
           communityStakes[staker][stakee].slashedAmount = 0;
         }
-        communityStakes[staker][stakee].slashedInRound = currentSlashRound;
       }
+      communityStakes[staker][stakee].slashedInRound = currentSlashRound;
       totalSlashed[currentSlashRound] += slashedAmount;
       communityStakes[staker][stakee].amount -= slashedAmount;
       userTotalStaked[staker] -= slashedAmount;
