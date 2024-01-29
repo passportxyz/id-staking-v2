@@ -4,7 +4,8 @@
     {
       "files": "*.sol",
       "options": {
-        "printWidth": 100
+        "printWidth": 100,
+        "tabWidth": 2
       }
     }
   ]
