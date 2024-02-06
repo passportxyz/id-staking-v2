@@ -6,6 +6,7 @@ import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/Pau
 import {UUPSUpgradeable} from "@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol";
 // TODO Should we use IERC20 instead? It looks like the ABI matches for the functions we use
 import {GTC} from "./mocks/GTC.sol";
+import {IGitcoinIdentityStaking} from "./IGitcoinIdentityStaking.sol";
 
 // TODO - add extendSelfStake(duration) and extendCommunityStake(stakee, duration) functions
 // TODO - add IGitcoinIdentityStaking.sol interface definition (maybe with only the
@@ -19,6 +20,7 @@ import {GTC} from "./mocks/GTC.sol";
  * @notice This contract is used to stake GTC on self/community identity
  */
 contract GitcoinIdentityStaking is
+  IGitcoinIdentityStaking,
   Initializable,
   UUPSUpgradeable,
   AccessControlUpgradeable,
