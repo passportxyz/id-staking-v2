@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: GPL
 pragma solidity ^0.8.23;
 
-import {Initializable, AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
-import {UUPSUpgradeable} from "@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {IIdentityStaking} from "./IIdentityStaking.sol";
 
-// TODO - docs for each function, example:
-//          https://github.com/Uniswap/v3-core/blob/main/contracts/interfaces/IUniswapV3Factory.sol
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+
+import {IIdentityStaking} from "./IIdentityStaking.sol";
 
 /// @title IdentityStaking
 /// @author Passport
@@ -21,7 +21,6 @@ contract IdentityStaking is
   PausableUpgradeable
 {
   /***** SECTION 0: Errors, State, Events *****/
-
 
   /// @dev Address parameter cannot be zero
   error AddressCannotBeZero();
@@ -50,10 +49,10 @@ contract IdentityStaking is
   /// @dev The staker and stakee arrays must be the same length
   error StakerStakeeMismatch();
 
-  /// @dev The requested funds are not available to release for this user
+  /// @dev The requested funds are greater than the slashed amount for this user
   error FundsNotAvailableToRelease();
 
-  /// @dev The requested funds are not available to release for this user from this round
+  /// @dev The requested funds are not available to release for this user from the given round
   error FundsNotAvailableToReleaseFromRound();
 
   /// @dev The round has already been burned and its slashed stake cannot be released
@@ -68,13 +67,16 @@ contract IdentityStaking is
   /// @notice Role held by addresses which are permitted to release an un-burned slash.
   bytes32 public constant RELEASER_ROLE = keccak256("RELEASER_ROLE");
 
+  /// @notice Role held by addresses which are permitted to pause the contract.
+  bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
+
   /// @notice Struct representing a stake
-  /// @notice unlockTime The unix time in seconds after which the stake can be withdrawn
-  /// @notice amount The amount of GTC staked, with 18 decimals
-  /// @notice slashedAmount The amount of GTC slashed (could already be burned)
-  /// @notice slashedInRound The round in which the stake was last slashed
+  /// @param unlockTime The unix time in seconds after which the stake can be withdrawn
+  /// @param amount The amount of GTC staked, with 18 decimals
+  /// @param slashedAmount The amount of GTC slashed (could already be burned)
+  /// @param slashedInRound The round in which the stake was last slashed
   /// @dev uint88s can hold up to 300 million w/ 18 decimals, or 3x the current max supply
-  /// @dev `amount` does not include any slashed or burned GTC
+  ///      `amount` does not include any slashed or burned GTC
   struct Stake {
     uint64 unlockTime;
     uint88 amount;
@@ -93,11 +95,13 @@ contract IdentityStaking is
 
   /// @notice The current round of slashing, incremented on each call to `lockAndBurn`
   /// @dev uint16 can hold up to 65,535 rounds, or 16,383 years with 90 day rounds
-  uint16 public currentSlashRound = 1;
+  ///      Set to `1` in the initializer
+  uint16 public currentSlashRound;
 
   /// @notice The minimum duration between burn rounds
   /// @dev This sets the minimum appeal period for a slash
-  uint64 public burnRoundMinimumDuration = 90 days;
+  ///      Set to `90 days` in the initializer
+  uint64 public burnRoundMinimumDuration;
 
   /// @notice The timestamp of the last burn
   uint256 public lastBurnTimestamp;
@@ -153,9 +157,7 @@ contract IdentityStaking is
   /// @param amount The amount of GTC burned in this transaction
   event Burn(uint16 indexed round, uint88 amount);
 
-
   /***** SECTION 1: Admin Functions *****/
-
 
   /// @notice Initialize the contract
   /// @param tokenAddress The address of the GTC token contract
@@ -178,6 +180,7 @@ contract IdentityStaking is
     __Pausable_init();
 
     _grantRole(DEFAULT_ADMIN_ROLE, initialAdmin);
+    _grantRole(PAUSER_ROLE, initialAdmin);
 
     for (uint256 i = 0; i < initialSlashers.length; i++) {
       _grantRole(SLASHER_ROLE, initialSlashers[i]);
@@ -190,16 +193,18 @@ contract IdentityStaking is
     token = IERC20(tokenAddress);
     burnAddress = _burnAddress;
 
+    currentSlashRound = 1;
+    burnRoundMinimumDuration = 90 days;
     lastBurnTimestamp = block.timestamp;
   }
 
   /// @notice Pause the contract
-  function pause() external onlyRole(DEFAULT_ADMIN_ROLE) whenNotPaused {
+  function pause() external onlyRole(PAUSER_ROLE) whenNotPaused {
     _pause();
   }
 
   /// @notice Unpause the contract
-  function unpause() external onlyRole(DEFAULT_ADMIN_ROLE) whenPaused {
+  function unpause() external onlyRole(PAUSER_ROLE) whenPaused {
     _unpause();
   }
 
@@ -208,17 +213,15 @@ contract IdentityStaking is
   /// @dev UUPSUpgradeable allows the contract to be permanently frozen in the future
   function _authorizeUpgrade(address) internal override onlyRole(DEFAULT_ADMIN_ROLE) {}
 
-
   /***** SECTION 2: Staking Functions *****/
-
 
   /// @notice Add self stake
   /// @param amount The amount of GTC to Stake
   /// @param duration The duration in seconds of the stake lock period
   /// @dev The duration must be between 12 weeks and 104 weeks, and after any existing lock
-  /// @dev The amount must be greater than zero
-  /// @dev The unlock time is calculated as `block.timestamp + duration`
-  /// @dev If there is any existing self-stake, the unlock time is extended for the entire stake amount
+  ///      The amount must be greater than zero
+  ///      The unlock time is calculated as `block.timestamp + duration`
+  ///      If there is any existing self-stake, the unlock time is extended for the entire stake amount
   function selfStake(uint88 amount, uint64 duration) external whenNotPaused {
     if (amount == 0) {
       revert AmountMustBeGreaterThanZero();
@@ -250,7 +253,7 @@ contract IdentityStaking is
   /// @notice Extend lock period for self stake
   /// @param duration The duration in seconds for the new lock period
   /// @dev The duration must be between 12 weeks and 104 weeks, and after any existing lock for this self-stake
-  /// @dev The unlock time is calculated as `block.timestamp + duration`
+  ///      The unlock time is calculated as `block.timestamp + duration`
   function extendSelfStake(uint64 duration) external whenNotPaused {
     if (selfStakes[msg.sender].amount == 0) {
       revert AmountMustBeGreaterThanZero();
@@ -299,9 +302,9 @@ contract IdentityStaking is
   /// @param amount The amount to stake
   /// @param duration The duration in seconds of the stake lock period
   /// @dev The duration must be between 12-104 weeks and 104 weeks, and after any existing lock for this staker+stakee
-  /// @dev The amount must be greater than zero
-  /// @dev The unlock time is calculated as `block.timestamp + duration`
-  /// @dev If there is any existing stake by this staker on this stakee, the unlock time is extended for the entire stake amount
+  ///      The amount must be greater than zero
+  ///      The unlock time is calculated as `block.timestamp + duration`
+  ///      If there is any existing stake by this staker on this stakee, the unlock time is extended for the entire stake amount
   function communityStake(address stakee, uint88 amount, uint64 duration) external whenNotPaused {
     if (stakee == msg.sender) {
       revert CannotStakeOnSelf();
@@ -340,7 +343,7 @@ contract IdentityStaking is
   /// @param stakee The address of the stakee
   /// @param duration The duration in seconds for the new lock period
   /// @dev The duration must be between 12-104 weeks and 104 weeks, and after any existing lock for this staker+stakee
-  /// @dev The unlock time is calculated as `block.timestamp + duration`
+  ///      The unlock time is calculated as `block.timestamp + duration`
   function extendCommunityStake(address stakee, uint64 duration) external whenNotPaused {
     if (communityStakes[msg.sender][stakee].amount == 0) {
       revert AmountMustBeGreaterThanZero();
@@ -385,9 +388,7 @@ contract IdentityStaking is
     emit CommunityStakeWithdrawn(msg.sender, stakee, amount);
   }
 
-
   /***** SECTION 3: Slashing Functions *****/
-
 
   /// @notice Submit a slash
   /// @param selfStakers The addresses of the self-stakers to slash
@@ -395,9 +396,9 @@ contract IdentityStaking is
   /// @param communityStakees Ordered list of the community-stakees to slash
   /// @param percent The percentage to slash from each stake
   /// @dev The slash percent must be between 0 and 100
-  /// @dev The community staker and stakee arrays must be the same length
-  /// @dev Ordered such that communityStakers[i] has a communityStake on communityStakees[i]
-  /// @dev All staked amounts are liable to be slashed, even if they are unlocked
+  ///      The community staker and stakee arrays must be the same length
+  ///      Ordered such that communityStakers[i] has a communityStake on communityStakees[i]
+  ///      All staked amounts are liable to be slashed, even if they are unlocked
   function slash(
     address[] calldata selfStakers,
     address[] calldata communityStakers,
@@ -478,11 +479,12 @@ contract IdentityStaking is
   }
 
   /// @notice Progress to the next slash round, this has 3 effects:
-  /// @notice 1) Locks the current round so that it can be burned after `burnRoundMinimumDuration` has passed
-  /// @notice 2) Burns the previous round
-  /// @notice 3) Starts the new round
+  ///      1) Locks the current round so that it can be burned after `burnRoundMinimumDuration` has passed
+  ///      2) Burns the previous round
+  ///      3) Starts the new round
   /// @dev Anyone can call this function, the `burnRoundMinimumDuration` keeps everything in check
-  /// @dev This is all about enforcing a minimum appeal period for a slash
+  ///      This is all about enforcing a minimum appeal period for a slash
+  ///      The "locking" is implicit, in that the previous round is always burned and there is a minimum duration between burns
   function lockAndBurn() external whenNotPaused {
     if (block.timestamp - lastBurnTimestamp < burnRoundMinimumDuration) {
       revert MinimumBurnRoundDurationNotMet();
@@ -508,8 +510,8 @@ contract IdentityStaking is
   /// @param amountToRelease The amount to release
   /// @param slashRound The round from which to release the funds
   /// @dev Only funds from the current round and the previous round can be released (prior rounds already burned)
-  /// @dev If stakee == staker, the funds are released from the self-stake, otherwise from the community-stake
-  /// @dev Funds can only be released back to the original staker
+  ///      If stakee == staker, the funds are released from the self-stake, otherwise from the community-stake
+  ///      Funds can only be released back to the original staker
   function release(
     address staker,
     address stakee,

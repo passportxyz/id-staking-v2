@@ -9,10 +9,10 @@ interface IIdentityStaking {
 
   /// @notice Self-stakes by a user
   /// @param staker The staker's address
-  /// @return unlockTime The time at which the stake unlocks
-  /// @return amount The amount of the stake, with 18 decimal places
-  /// @return slashedAmount see `Stake` for details
-  /// @return slashedInRound see `Stake` for details
+  /// @return unlockTime Time at which the stake unlocks
+  /// @return amount Unslashed amount of the stake, with 18 decimal places
+  /// @return slashedAmount Current slash amount
+  /// @return slashedInRound Round in which the stake was last slashed
   /// @dev see the `Stake` struct for more details
   function selfStakes(
     address staker
@@ -22,12 +22,12 @@ interface IIdentityStaking {
     returns (uint64 unlockTime, uint88 amount, uint88 slashedAmount, uint16 slashedInRound);
 
   /// @notice Community-stakes by a staker on a stakee
-  /// @param staker The staker's address
-  /// @param stakee The stakee's address
-  /// @return unlockTime The time at which the stake unlocks
-  /// @return amount The amount of the stake, with 18 decimal places
-  /// @return slashedAmount see `Stake` for details
-  /// @return slashedInRound see `Stake` for details
+  /// @param staker Staker's address
+  /// @param stakee Stakee's address
+  /// @return unlockTime Time at which the stake unlocks
+  /// @return amount Unslashed amount of the stake, with 18 decimal places
+  /// @return slashedAmount Current slash amount
+  /// @return slashedInRound Round in which the stake was last slashed
   /// @dev see the `Stake` struct for more details
   function communityStakes(
     address staker,

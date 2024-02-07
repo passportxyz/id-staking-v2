@@ -19,7 +19,7 @@ writing this contract:
 ## Table of Contents
 
 1. [Working with the repo](./#working-with-the-repo)
-2. [GitcoinIdentityStaking.sol](./#gitcoinidentitystaking.sol)
+2. [IdentityStaking.sol](./#identitystaking.sol)
     1. [Methods](./#methods)
     2. [Events](./#events)
     3. [State](./#state)
@@ -34,14 +34,14 @@ REPORT_GAS=true npx hardhat test
 npx hardhat run scripts/deploy.ts --network <network>
 ```
 
-## GitcoinIdentityStaking.sol
+## IdentityStaking.sol
 
 ### Methods
 
 #### selfStake
 
 ```solidity
-function selfStake(uint88 amount, uint64 duration) external;
+function selfStake(uint88 amount, uint64 duration) external whenNotPaused;
 ```
 
 Add `amount` GTC to your stake on yourself. Minimum `duration` is 12 weeks,
@@ -56,7 +56,7 @@ the new `duration`.
 #### extendSelfStake
 
 ```solidity
-function extendSelfStake(uint64 duration) external;
+function extendSelfStake(uint64 duration) external whenNotPaused;
 ```
 
 Set existing self-stake's unlock time to the end of `duration`. Minimum
@@ -67,7 +67,7 @@ The `duration` must end later than the existing self-stake's `unlockTime`.
 #### withdrawSelfStake
 
 ```solidity
-function withdrawSelfStake(uint88 amount) external;
+function withdrawSelfStake(uint88 amount) external whenNotPaused;
 ```
 
 Withdraw `amount` GTC from your unlocked self-stake.
@@ -75,7 +75,7 @@ Withdraw `amount` GTC from your unlocked self-stake.
 #### communityStake
 
 ```solidity
-function communityStake(address stakee, uint88 amount, uint64 duration) external;
+function communityStake(address stakee, uint88 amount, uint64 duration) external whenNotPaused;
 ```
 
 Add `amount` GTC to your stake on `stakee`. Minimum `duration` is 12 weeks,
@@ -90,7 +90,7 @@ extended to the end of the new `duration`.
 #### extendCommunityStake
 
 ```solidity
-function extendCommunityStake(address stakee, uint64 duration) external;
+function extendCommunityStake(address stakee, uint64 duration) external whenNotPaused;
 ```
 
 Set existing community-stake's unlock time to the end of `duration`. Minimum
@@ -101,7 +101,7 @@ The `duration` must end later than the existing community-stake's `unlockTime`.
 #### withdrawCommunityStake
 
 ```solidity
-function withdrawCommunityStake(address stakee, uint88 amount) external;
+function withdrawCommunityStake(address stakee, uint88 amount) external whenNotPaused;
 ```
 
 Withdraw `amount` GTC from your unlocked community-stake on `stakee`.
@@ -109,7 +109,7 @@ Withdraw `amount` GTC from your unlocked community-stake on `stakee`.
 #### slash
 
 ```solidity
-function slash(address[] selfStakers, address[] communityStakers, address[] communityStakees, uint64 percent) external onlyRole(SLASHER_ROLE);
+function slash(address[] selfStakers, address[] communityStakers, address[] communityStakees, uint64 percent) external onlyRole(SLASHER_ROLE) whenNotPaused;
 ```
 
 Slash the provided addresses by `percent`. Addresses in `selfStakers` correspond
@@ -125,7 +125,7 @@ its unlockTime*
 #### lockAndBurn
 
 ```solidity
-function lockAndBurn() external;
+function lockAndBurn() external whenNotPaused;
 ```
 
 This function is to be called every three months (`burnRoundMinimumDuration`).
@@ -141,7 +141,7 @@ See [Appendix A: Slashing Rounds](./#appendix-a-slashing-rounds) for more detail
 #### release
 
 ```solidity
-function release(address staker, address stakee, uint88 amountToRelease, uint16 slashRound) external onlyRole(RELEASER_ROLE);
+function release(address staker, address stakee, uint88 amountToRelease, uint16 slashRound) external onlyRole(RELEASER_ROLE) whenNotPaused;
 ```
 
 Release `amountToRelease` GTC from the community stake on `stakee` by `staker`.
@@ -150,6 +150,24 @@ is two or more rounds previous to the current round, then the stake is
 already burned and this function will fail.
 
 This function can only be called by an address with the `RELEASER_ROLE`.
+
+#### pause
+
+```solidity
+function pause() external onlyRole(PAUSER_ROLE) whenNotPaused;
+```
+
+Pause the contract. This function can only be called by an address with the
+`PAUSER_ROLE`.
+
+#### unpause
+
+```solidity
+function unpause() external onlyRole(PAUSER_ROLE) whenPaused;
+```
+
+Unpause the contract. This function can only be called by an address with the
+`PAUSER_ROLE`.
 
 ### Events
 
@@ -227,6 +245,14 @@ bytes32 public constant RELEASER_ROLE = keccak256("RELEASER_ROLE");
 ```
 
 Role held by addresses which are permitted to release an un-burned slash.
+
+#### PAUSER_ROLE
+
+```solidity
+bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
+```
+
+Role held by addresses which are permitted to pause the contract.
 
 #### struct Stake
 
