@@ -13,6 +13,10 @@ function shuffleArray(array: any[]) {
 const fiveMinutes = 5 * 60;
 const twelveWeeksInSeconds = 12 * 7 * 24 * 60 * 60 + 1; // 12 weeks in seconds
 
+// TODO add tests for:
+// - selfStake - stake 1 GTC for 24 weeks, then try to stake 1 GTC for 12 weeks. Should fail.
+// - communityStake - stake 1 GTC for 24 weeks, then try to stake 1 GTC for 12 weeks. Should fail.
+
 describe("GitcoinIdentityStaking", function () {
   this.beforeEach(async function () {
     await reset();
