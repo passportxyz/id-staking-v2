@@ -247,11 +247,11 @@ contract IdentityStaking is
     selfStakes[msg.sender].unlockTime = unlockTime;
     userTotalStaked[msg.sender] += amount;
 
+    emit SelfStake(msg.sender, amount, unlockTime);
+
     if (!token.transferFrom(msg.sender, address(this), amount)) {
       revert FailedTransfer();
     }
-
-    emit SelfStake(msg.sender, amount, unlockTime);
   }
 
   /// @notice Extend lock period for self stake
@@ -294,11 +294,11 @@ contract IdentityStaking is
     selfStakes[msg.sender].amount -= amount;
     userTotalStaked[msg.sender] -= amount;
 
+    emit SelfStakeWithdrawn(msg.sender, amount);
+
     if (!token.transfer(msg.sender, amount)) {
       revert FailedTransfer();
     }
-
-    emit SelfStakeWithdrawn(msg.sender, amount);
   }
 
   /// @notice Add community stake on a stakee
@@ -336,11 +336,11 @@ contract IdentityStaking is
     communityStakes[msg.sender][stakee].unlockTime = unlockTime;
     userTotalStaked[msg.sender] += amount;
 
+    emit CommunityStake(msg.sender, stakee, amount, unlockTime);
+
     if (!token.transferFrom(msg.sender, address(this), amount)) {
       revert FailedTransfer();
     }
-
-    emit CommunityStake(msg.sender, stakee, amount, unlockTime);
   }
 
   /// @notice Extend lock period for community stake on a stakee
@@ -385,11 +385,11 @@ contract IdentityStaking is
     communityStakes[msg.sender][stakee].amount -= amount;
     userTotalStaked[msg.sender] -= amount;
 
+    emit CommunityStakeWithdrawn(msg.sender, stakee, amount);
+
     if (!token.transfer(msg.sender, amount)) {
       revert FailedTransfer();
     }
-
-    emit CommunityStakeWithdrawn(msg.sender, stakee, amount);
   }
 
   /***** SECTION 3: Slashing Functions *****/
@@ -496,16 +496,16 @@ contract IdentityStaking is
 
     uint88 amountToBurn = totalSlashed[currentSlashRound - 1];
 
+    emit Burn(currentSlashRound - 1, amountToBurn);
+
+    currentSlashRound++;
+    lastBurnTimestamp = block.timestamp;
+
     if (amountToBurn > 0) {
       if (!token.transfer(burnAddress, amountToBurn)) {
         revert FailedTransfer();
       }
     }
-
-    emit Burn(currentSlashRound - 1, amountToBurn);
-
-    currentSlashRound++;
-    lastBurnTimestamp = block.timestamp;
   }
 
   /// @notice Release slashed funds

@@ -585,3 +585,19 @@ done:
 Where it makes sense, we've used OpenZeppelin's contracts to handle generic
 functionality (access control, pausing, and upgrading). These contracts are
 well-vetted and audited.
+
+#### `block.timestamp` usage
+
+`block.timestamp` is sometimes a source of security issues because nodes can
+tweak it a bit. However, in this contract, `block.timestamp` is only used to
+determine when stake is staked and when it can be withdrawn. This happens over
+long periods of a minimum of 12 weeks.
+
+The danger with `block.timestamp` is when it's used to derive randomness, or
+when changing the value by a few seconds or less could have a significant
+impact. This is not the case in this contract.
+
+An alternative would be to rely on the average block time and calculate block
+numbers, but then this would need to be configurable in case the average block
+time changes in the future. So this would be a source of manipulation and
+potential error. Further, it's simply unnecessary as explained above.
