@@ -43,7 +43,7 @@ contract IdentityStaking is
   /// @dev The requested withdrawal amount is greater than the stake
   error AmountTooHigh();
 
-  /// @dev The slash percent must be between 0 and 100
+  /// @dev The slash percent must be between 1 and 100
   error InvalidSlashPercent();
 
   /// @dev The staker and stakee arrays must be the same length
@@ -107,6 +107,10 @@ contract IdentityStaking is
   uint256 public lastBurnTimestamp;
 
   /// @notice The address to which all burned tokens are sent
+  /// @dev Set in the initializer
+  ///      This could be set to the zero address. But in the case of GTC,
+  ///      it is set to the GTC token contract address because GTC cannot
+  ///      be transferred to the zero address
   address public burnAddress;
 
   /// @notice The total amount of GTC slashed in each round
@@ -172,7 +176,7 @@ contract IdentityStaking is
     address[] calldata initialSlashers,
     address[] calldata initialReleasers
   ) public initializer {
-    if (tokenAddress == address(0) || _burnAddress == address(0)) {
+    if (tokenAddress == address(0)) {
       revert AddressCannotBeZero();
     }
 
@@ -395,7 +399,7 @@ contract IdentityStaking is
   /// @param communityStakers Ordered list of the community-stakers to slash
   /// @param communityStakees Ordered list of the community-stakees to slash
   /// @param percent The percentage to slash from each stake
-  /// @dev The slash percent must be between 0 and 100
+  /// @dev The slash percent must be between 1 and 100
   ///      The community staker and stakee arrays must be the same length
   ///      Ordered such that communityStakers[i] has a communityStake on communityStakees[i]
   ///      All staked amounts are liable to be slashed, even if they are unlocked
@@ -403,9 +407,9 @@ contract IdentityStaking is
     address[] calldata selfStakers,
     address[] calldata communityStakers,
     address[] calldata communityStakees,
-    uint64 percent
+    uint88 percent
   ) external onlyRole(SLASHER_ROLE) whenNotPaused {
-    if (percent > 100) {
+    if (percent > 100 || percent == 0) {
       revert InvalidSlashPercent();
     }
 

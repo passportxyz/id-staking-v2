@@ -21,6 +21,7 @@ describe("IdentityStaking", function () {
     this.owner = ownerAccount;
     this.userAccounts = userAccounts;
 
+    // Note: This contract has been modified such that approvals are not required
     const GTC = await ethers.getContractFactory("GTC", this.owner);
     this.gtc = await GTC.deploy(
       this.owner.address,
@@ -50,22 +51,13 @@ describe("IdentityStaking", function () {
     }
   });
 
-  it.skip("end-to-end (gas) tests", async function () {
+  it("end-to-end (gas) tests", async function () {
     // const numUsers = 200;
     const numUsers = 20;
     const userAccounts = this.userAccounts.slice(0, numUsers);
 
     await Promise.all(
       [this.identityStaking].map(async (identityStaking: any) => {
-        identityStaking.grantRole(
-          await identityStaking.SLASHER_ROLE(),
-          this.owner.address,
-        );
-        identityStaking.grantRole(
-          await identityStaking.RELEASER_ROLE(),
-          this.owner.address,
-        );
-
         const selfStakers: string[] = [];
         const communityStakers: string[] = [];
         const communityStakees: string[] = [];
@@ -145,6 +137,8 @@ describe("IdentityStaking", function () {
   it("should reject burns too close together", async function () {
     await time.increase(60 * 60 * 24 * 91);
     await this.identityStaking.connect(this.owner).lockAndBurn();
+
+    await time.increase(60 * 60 * 24 * 89);
     await expect(
       this.identityStaking.connect(this.owner).lockAndBurn(),
     ).to.be.revertedWithCustomError(
@@ -156,15 +150,6 @@ describe("IdentityStaking", function () {
   describe("slashing/releasing/burning tests", function () {
     beforeEach(async function () {
       const userAccounts = this.userAccounts.slice(0, 5);
-      this.identityStaking.grantRole(
-        await this.identityStaking.SLASHER_ROLE(),
-        this.owner.address,
-      );
-      this.identityStaking.grantRole(
-        await this.identityStaking.RELEASER_ROLE(),
-        this.owner.address,
-      );
-
       const selfStakers: string[] = [];
       const communityStakers: string[] = [];
       const communityStakees: string[] = [];
@@ -329,6 +314,146 @@ describe("IdentityStaking", function () {
       ).to.be.revertedWithCustomError(
         this.identityStaking,
         "FundsNotAvailableToRelease",
+      );
+    });
+
+    it("should reject release from the wrong round", async function () {
+      await this.identityStaking
+        .connect(this.owner)
+        .slash(
+          this.selfStakers.slice(0, 3),
+          this.communityStakers.slice(0, 3),
+          this.communityStakees.slice(0, 3),
+          50,
+        );
+
+      expect(await this.identityStaking.currentSlashRound()).to.equal(1);
+
+      // Slashed in round 1, but trying to release from round 0
+
+      await expect(
+        this.identityStaking
+          .connect(this.owner)
+          .release(this.selfStakers[0], this.selfStakers[0], 500, 0),
+      ).to.be.revertedWithCustomError(
+        this.identityStaking,
+        "FundsNotAvailableToReleaseFromRound",
+      );
+
+      await expect(
+        this.identityStaking
+          .connect(this.owner)
+          .release(this.communityStakees[0], this.communityStakers[1], 500, 0),
+      ).to.be.revertedWithCustomError(
+        this.identityStaking,
+        "FundsNotAvailableToReleaseFromRound",
+      );
+    });
+
+    it("should reject release from burned round", async function () {
+      await this.identityStaking
+        .connect(this.owner)
+        .slash(
+          this.selfStakers.slice(0, 3),
+          this.communityStakers.slice(0, 3),
+          this.communityStakees.slice(0, 3),
+          50,
+        );
+
+      // Slashed in round 1
+      expect(await this.identityStaking.currentSlashRound()).to.equal(1);
+
+      await time.increase(60 * 60 * 24 * 91); // 91 days
+      await this.identityStaking.connect(this.owner).lockAndBurn();
+
+      await time.increase(60 * 60 * 24 * 91); // 91 days
+      await this.identityStaking.connect(this.owner).lockAndBurn();
+
+      expect(await this.identityStaking.currentSlashRound()).to.equal(3);
+
+      await expect(
+        this.identityStaking
+          .connect(this.owner)
+          .release(this.selfStakers[0], this.selfStakers[0], 500, 1),
+      ).to.be.revertedWithCustomError(
+        this.identityStaking,
+        "RoundAlreadyBurned",
+      );
+    });
+
+    it("should correctly handle 0%, 1%, 100%, and 101% slashes", async function () {
+      expect(
+        (await this.identityStaking.selfStakes(this.userAccounts[0].address))
+          .amount,
+      ).to.equal(100000);
+
+      await expect(
+        this.identityStaking
+          .connect(this.owner)
+          .slash([this.userAccounts[0].address], [], [], 0), // 0% slash
+      ).to.be.revertedWithCustomError(
+        this.identityStaking,
+        "InvalidSlashPercent",
+      );
+
+      await expect(
+        this.identityStaking
+          .connect(this.owner)
+          .slash([this.userAccounts[0].address], [], [], 101), // 101% slash
+      ).to.be.revertedWithCustomError(
+        this.identityStaking,
+        "InvalidSlashPercent",
+      );
+
+      await expect(
+        this.identityStaking.connect(this.owner).slash(
+          [this.userAccounts[0].address],
+          [],
+          [],
+          BigInt(2) ** BigInt(88) - BigInt(1), // Max uint88
+        ),
+      ).to.be.revertedWithCustomError(
+        this.identityStaking,
+        "InvalidSlashPercent",
+      );
+
+      expect(
+        (await this.identityStaking.selfStakes(this.userAccounts[0].address))
+          .amount,
+      ).to.equal(100000);
+
+      await this.identityStaking
+        .connect(this.owner)
+        .slash([this.userAccounts[0].address], [], [], 1); // 0% slash
+
+      expect(
+        (await this.identityStaking.selfStakes(this.userAccounts[0].address))
+          .amount,
+      ).to.equal(99000);
+
+      await this.identityStaking
+        .connect(this.owner)
+        .slash([this.userAccounts[0].address], [], [], 100); // 100% slash
+
+      expect(
+        (await this.identityStaking.selfStakes(this.userAccounts[0].address))
+          .amount,
+      ).to.equal(0);
+    });
+
+    it("should reject slash with mismatched stakee and staker arrays", async function () {
+      await expect(
+        this.identityStaking
+          .connect(this.owner)
+          .slash(
+            [this.userAccounts[0].address],
+            [this.userAccounts[1].address],
+            [],
+            50,
+          ),
+      ).to.be.revertedWithCustomError(
+        this.identityStaking,
+        "StakerStakeeMismatch",
       );
     });
 
@@ -501,7 +626,6 @@ describe("IdentityStaking", function () {
 
   describe("self and community staking", function () {
     it("should allow self staking", async function () {
-      const fiveMinutes = 5 * 60; // 5 minutes in seconds
       const unlockTime =
         twelveWeeksInSeconds + Math.floor(new Date().getTime() / 1000);
 
@@ -524,16 +648,30 @@ describe("IdentityStaking", function () {
 
       await time.increase(twelveWeeksInSeconds + 1);
 
+      const contractAddress = await this.identityStaking.getAddress();
+
+      expect(await this.gtc.balanceOf(this.userAccounts[0].address)).to.equal(
+        100000000000 - 100000,
+      );
+      expect(await this.gtc.balanceOf(contractAddress)).to.equal(100000);
+
       await this.identityStaking
         .connect(this.userAccounts[0])
         .withdrawSelfStake(1);
 
-      // TODO check balances
+      expect(await this.gtc.balanceOf(this.userAccounts[0])).to.equal(
+        100000000000 - 100000 + 1,
+      );
+      expect(await this.gtc.balanceOf(contractAddress)).to.equal(99999);
+      expect(
+        (await this.identityStaking.selfStakes(this.userAccounts[0])).amount,
+      ).to.equal(99999);
     });
 
     it("should allow community staking", async function () {
       const unlockTime =
         twelveWeeksInSeconds + Math.floor(new Date().getTime() / 1000);
+
       await this.identityStaking
         .connect(this.userAccounts[0])
         .communityStake(this.userAccounts[1], 100000n, twelveWeeksInSeconds);
@@ -554,13 +692,31 @@ describe("IdentityStaking", function () {
         .connect(this.userAccounts[0])
         .communityStake(this.userAccounts[1], 100000n, twelveWeeksInSeconds);
 
+      const contractAddress = await this.identityStaking.getAddress();
+
+      expect(await this.gtc.balanceOf(this.userAccounts[0].address)).to.equal(
+        100000000000 - 100000,
+      );
+      expect(await this.gtc.balanceOf(contractAddress)).to.equal(100000);
+
       await time.increase(twelveWeeksInSeconds + 1);
 
       await this.identityStaking
         .connect(this.userAccounts[0])
         .withdrawCommunityStake(this.userAccounts[1], 100000n);
 
-      // TODO check balances
+      expect(await this.gtc.balanceOf(this.userAccounts[0])).to.equal(
+        100000000000,
+      );
+      expect(await this.gtc.balanceOf(contractAddress)).to.equal(0);
+      expect(
+        (
+          await this.identityStaking.communityStakes(
+            this.userAccounts[0],
+            this.userAccounts[1],
+          )
+        ).amount,
+      ).to.equal(0);
     });
 
     it("should extend the unlock time for self stake", async function () {
@@ -654,6 +810,21 @@ describe("IdentityStaking", function () {
     });
 
     describe("failed stake tests", function () {
+      it("should revert when community staking on the zero address", async function () {
+        await expect(
+          this.identityStaking
+            .connect(this.userAccounts[0])
+            .communityStake(
+              "0x0000000000000000000000000000000000000000",
+              100000,
+              twelveWeeksInSeconds,
+            ),
+        ).to.be.revertedWithCustomError(
+          this.identityStaking,
+          "AddressCannotBeZero",
+        );
+      });
+
       it("should reject self stake with invalid unlock time", async function () {
         const unlockTime = Math.floor(new Date().getTime() / 1000) - 1000;
 
@@ -700,6 +871,28 @@ describe("IdentityStaking", function () {
           this.identityStaking
             .connect(this.userAccounts[0])
             .communityStake(this.userAccounts[1], 0, unlockTime),
+        ).to.be.revertedWithCustomError(
+          this.identityStaking,
+          "AmountMustBeGreaterThanZero",
+        );
+      });
+
+      it("should reject extending non-existent self stake", async function () {
+        await expect(
+          this.identityStaking
+            .connect(this.owner)
+            .extendSelfStake(12 * 7 * 24 * 60 * 60), // 12 weeks
+        ).to.be.revertedWithCustomError(
+          this.identityStaking,
+          "AmountMustBeGreaterThanZero",
+        );
+      });
+
+      it("should reject extending non-existent community stake", async function () {
+        await expect(
+          this.identityStaking
+            .connect(this.owner)
+            .extendCommunityStake(this.userAccounts[1], 12 * 7 * 24 * 60 * 60), // 12 weeks
         ).to.be.revertedWithCustomError(
           this.identityStaking,
           "AmountMustBeGreaterThanZero",
@@ -793,6 +986,26 @@ describe("IdentityStaking", function () {
             .withdrawCommunityStake(this.userAccounts[1], 100000n),
         ).to.be.revertedWithCustomError(this.identityStaking, "StakeIsLocked");
       });
+
+      it("should not allow withdrawal exceeding self stake amount", async function () {
+        await time.increase(twelveWeeksInSeconds + 1);
+
+        await expect(
+          this.identityStaking
+            .connect(this.userAccounts[0])
+            .withdrawSelfStake(100001),
+        ).to.be.revertedWithCustomError(this.identityStaking, "AmountTooHigh");
+      });
+
+      it("should not allow withdrawal exceeding community stake amount", async function () {
+        await time.increase(twelveWeeksInSeconds + 1);
+
+        await expect(
+          this.identityStaking
+            .connect(this.userAccounts[0])
+            .withdrawCommunityStake(this.userAccounts[1], 100001),
+        ).to.be.revertedWithCustomError(this.identityStaking, "AmountTooHigh");
+      });
     });
   });
 
@@ -804,9 +1017,13 @@ describe("IdentityStaking", function () {
     expect(await this.identityStaking.hasRole(adminRole, this.owner.address)).to
       .be.true;
 
-    await this.identityStaking
-      .connect(this.owner)
-      .grantRole(adminRole, this.userAccounts[0].address);
+    await expect(
+      this.identityStaking
+        .connect(this.owner)
+        .grantRole(adminRole, this.userAccounts[0].address),
+    )
+      .to.emit(this.identityStaking, "RoleGranted")
+      .withArgs(adminRole, this.userAccounts[0].address, this.owner.address);
 
     expect(
       await this.identityStaking.hasRole(
@@ -889,10 +1106,17 @@ describe("IdentityStaking", function () {
 
   describe("pause tests", function () {
     it("should pause and unpause the contract", async function () {
-      await this.identityStaking.connect(this.owner).pause();
+      await expect(this.identityStaking.connect(this.owner).pause()).to.emit(
+        this.identityStaking,
+        "Paused",
+      );
       expect(await this.identityStaking.paused()).to.be.true;
 
-      await this.identityStaking.connect(this.owner).unpause();
+      await expect(this.identityStaking.connect(this.owner).unpause()).to.emit(
+        this.identityStaking,
+        "Unpaused",
+      );
+
       expect(await this.identityStaking.paused()).to.be.false;
     });
 
@@ -1016,4 +1240,50 @@ describe("IdentityStaking", function () {
       );
     });
   });
+});
+
+it("should handle staking full GTC supply", async function () {
+  const maxStakeAmount = 100000000000000000000000000n; // 100 million GTC
+
+  const [ownerAccount, ...userAccounts] = await ethers.getSigners();
+
+  this.owner = ownerAccount;
+  this.userAccounts = userAccounts;
+
+  const GTC = await ethers.getContractFactory("GTC", this.owner);
+  this.gtc = await GTC.deploy(
+    this.userAccounts[0].address,
+    this.owner.address,
+    Math.floor(new Date().getTime() / 1000) + 4,
+  );
+  const gtcAddress = await this.gtc.getAddress();
+
+  const IdentityStaking = await ethers.getContractFactory(
+    "IdentityStaking",
+    this.owner,
+  );
+  this.identityStaking = await IdentityStaking.deploy();
+
+  await this.identityStaking
+    .connect(this.owner)
+    .initialize(
+      gtcAddress,
+      "0x0000000000000000000000000000000000000001",
+      this.owner.address,
+      [this.owner.address],
+      [this.owner.address],
+    );
+
+  await expect(
+    this.identityStaking
+      .connect(this.userAccounts[0])
+      .selfStake(maxStakeAmount, twelveWeeksInSeconds),
+  )
+    .to.emit(this.identityStaking, "SelfStake")
+    .withArgs(this.userAccounts[0].address, maxStakeAmount, (unlockTime: any) =>
+      expect(unlockTime).to.be.closeTo(
+        Math.floor(Date.now() / 1000) + twelveWeeksInSeconds,
+        fiveMinutes,
+      ),
+    );
 });

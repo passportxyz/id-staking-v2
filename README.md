@@ -18,14 +18,15 @@ writing this contract:
 
 ## Table of Contents
 
-1. [Working with the repo](./#working-with-the-repo)
-2. [IdentityStaking.sol](./#identitystaking.sol)
-    1. [Methods](./#methods)
-    2. [Events](./#events)
-    3. [State](./#state)
-    4. [Appendix A: Slashing Rounds](./#appendix-a-slashing-rounds)
-    5. [Appendix B: Slashing in Consecutive Rounds](./#appendix-b-slashing-in-consecutive-rounds)
-    6. [Appendix C: Diagrams](./#appendix-c-diagrams)
+1. [Working with the repo](#working-with-the-repo)
+2. [IdentityStaking.sol](#identitystakingsol)
+    1. [Methods](#methods)
+    2. [Events](#events)
+    3. [State](#state)
+    4. [Appendix A: Slashing Rounds](#appendix-a-slashing-rounds)
+    5. [Appendix B: Slashing in Consecutive Rounds](#appendix-b-slashing-in-consecutive-rounds)
+    6. [Appendix C: Diagrams](#appendix-c-diagrams)
+    7. [Appendix D: Security](#appendix-d-security)
 
 ## Working with the repo
 
@@ -118,6 +119,8 @@ to self-stakes to be slashed. The address in `communityStakers` and
 `communityStakers[i]` has a community-stake on `communityStakees[i]`.
 
 This function can only be called by an address with the `SLASHER_ROLE`.
+
+`percent` must be between 1 and 100.
 
 *Note: All staked GTC is liable to be slashed, even if it is past
 its unlockTime*
@@ -342,8 +345,8 @@ address public burnAddress
 The address to which burned stake is sent. Only configurable on initialization.
 
 The GTC contract does not allow for transfers to the zero address, so the
-address of the GTC contract itself will be used as the `burnAddress`. Tokens
-transferred to the GTC contract cannot ever be retrieved by anyone.
+address of the GTC contract itself will be used as the `burnAddress` instead.
+Tokens transferred to the GTC contract cannot ever be retrieved by anyone.
 
 #### totalSlashed
 
@@ -393,6 +396,7 @@ care about is enforcing a **minimum** appeal period.
 
 There is a caveat to this if a user is slashed in consecutive rounds. See
 [Appendix B](./#appendix-b-slashing-in-consecutive-rounds) for more details.
+
 ### Appendix B: Slashing in Consecutive Rounds
 
 If a user is slashed, and they had also been slashed in the previous round, then
@@ -511,3 +515,73 @@ sequenceDiagram
   end
   Community->>Staking Contract: Lock and Burn<br />(burns totalSlashed[2] = 17 GTC)
 ```
+
+### Appendix D: Security
+
+#### Reentrancy
+
+This contract is not susceptible to reentrancy attacks. All state changes are
+made before any external calls are made. Additionally, external calls are made
+only to the GTC contract set at initialization, which is a trusted contract.
+
+#### Token Ownership
+
+The tokens in this contract can only be in three states:
+
+1. Held by the contract (staked or frozen)
+2. Burned
+3. Returned to the original owner
+
+The contract *cannot* send tokens to any address other than the original owner,
+or the burn address.
+
+#### Token Amounts
+
+Token amounts are stored as `uint88` which can hold
+309,485,009,821,345,068,724,781,055 or just over 300 million with 18 decimals.
+This is 3x the current GTC supply.
+
+If this contract is used with tokens other than GTC, or if enough GTC were
+minted to exceed this amount, then the contract would need to be updated.
+Currently uint88s are used so that all stake info fits in a single 256 byte
+slot, which provides huge gas savings.
+
+If the current contract needs to be upgraded after the GTC supply exceeds this
+max supply, the following could be done:
+
+*Note: These scenarios are not fully thought out and may need some tweaks to be
+completely viable. These are just high level proof-of-concepts.*
+
+Option 1: Do nothing. In the extremely unlikely event that one of the uint88s
+were to exceed the max uint88, then the contract would revert. In the perfect
+storm, a user could not be slashed in a particular round. But this is
+exceedingly unlikely and not a huge deal anyways. Users could still withdraw
+their existing stake.
+
+Option 2: Add an explicit stake amount cap, user total stake cap, and a round
+cap at MAX_UINT88. This should effectively change nothing, it's the same as
+option 1 but with a clearer intention.
+
+Option 3: If we want to really consider what would be necessary to handle much
+larger amounts (i.e. in a hyperinflation scenario), then the following could be
+done:
+
+1. If necessary the contract can be paused while this upgrade is pending.
+2. The contract could be upgraded to start considering all uint88 `amount`
+   parameters to have e.g. 16 decimals. There could be a
+   `mapping (address => bool) amountUses16Decimals` to track which amounts are
+   using 16 decimals. (Note: This is high level, in reality we need to track
+   self, community, slash round amounts, etc.)
+3. 18 decimal amounts would be divided by 100 to get the new amount, when those
+   amounts are interacted with. Any change leftover could be refunded to The user.
+4. After all 18 decimal stake is withdrawn/burned, the logic to handle
+   both 16 and 18 decimal amounts at the same time could be removed. If
+   some old stakes are holding on, there could be a one-time refund to the user
+   of any leftover change (would need to be a new function, with guarantees
+   to only be called once, etc.).
+
+#### OpenZeppelin Contracts
+
+Where it makes sense, we've used OpenZeppelin's contracts to handle generic
+functionality (access control, pausing, and upgrading). These contracts are
+well-vetted and audited.
