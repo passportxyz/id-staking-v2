@@ -27,6 +27,7 @@ writing this contract:
     5. [Appendix B: Slashing in Consecutive Rounds](#appendix-b-slashing-in-consecutive-rounds)
     6. [Appendix C: Diagrams](#appendix-c-diagrams)
     7. [Appendix D: Security](#appendix-d-security)
+3. [IIdentityStaking.sol](#iidentitystakingsol)
 
 ## Working with the repo
 
@@ -601,3 +602,11 @@ An alternative would be to rely on the average block time and calculate block
 numbers, but then this would need to be configurable in case the average block
 time changes in the future. So this would be a source of manipulation and
 potential error. Further, it's simply unnecessary as explained above.
+
+## IIdentityStaking.sol
+
+This contract defines a minimal interface for the data that is likely to be
+useful onchain, for easy integration with other contracts.
+
+There are accessors for [selfStakes](#selfstakes),
+[communityStakes](#communitystakes), and [userTotalStaked](#usertotalstaked).

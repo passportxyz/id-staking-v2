@@ -1,5 +1,9 @@
 pragma solidity  0.8.23;
 
+// THIS CONTRACT IS ONLY USED AS PART OF TESTING
+// THIS IS NOT PRODUCTION CODE
+// THIS IS NOT AN AUDITED CONTRACT
+
 import "./SafeMath.sol";
 
 contract GTC {

@@ -3,6 +3,11 @@ pragma solidity ^0.8.23;
 
 // Subject to the MIT license.
 
+// THIS CONTRACT IS ONLY USED AS PART OF TESTING
+// THIS IS NOT PRODUCTION CODE
+// THIS IS NOT AN AUDITED CONTRACT
+
+
 /**
  * @dev Wrappers over Solidity's arithmetic operations with added overflow
  * checks.
