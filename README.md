@@ -18,14 +18,16 @@ writing this contract:
 
 ## Table of Contents
 
-1. [Working with the repo](./#working-with-the-repo)
-2. [GitcoinIdentityStaking.sol](./#gitcoinidentitystaking.sol)
-    1. [Methods](./#methods)
-    2. [Events](./#events)
-    3. [State](./#state)
-    4. [Appendix A: Slashing Rounds](./#appendix-a-slashing-rounds)
-    5. [Appendix B: Slashing in Consecutive Rounds](./#appendix-b-slashing-in-consecutive-rounds)
-    6. [Appendix C: Diagrams](./#appendix-c-diagrams)
+1. [Working with the repo](#working-with-the-repo)
+2. [IdentityStaking.sol](#identitystakingsol)
+    1. [Methods](#methods)
+    2. [Events](#events)
+    3. [State](#state)
+    4. [Appendix A: Slashing Rounds](#appendix-a-slashing-rounds)
+    5. [Appendix B: Slashing in Consecutive Rounds](#appendix-b-slashing-in-consecutive-rounds)
+    6. [Appendix C: Diagrams](#appendix-c-diagrams)
+    7. [Appendix D: Security](#appendix-d-security)
+3. [IIdentityStaking.sol](#iidentitystakingsol)
 
 ## Working with the repo
 
@@ -34,14 +36,14 @@ REPORT_GAS=true npx hardhat test
 npx hardhat run scripts/deploy.ts --network <network>
 ```
 
-## GitcoinIdentityStaking.sol
+## IdentityStaking.sol
 
 ### Methods
 
 #### selfStake
 
 ```solidity
-function selfStake(uint88 amount, uint64 duration) external;
+function selfStake(uint88 amount, uint64 duration) external whenNotPaused;
 ```
 
 Add `amount` GTC to your stake on yourself. Minimum `duration` is 12 weeks,
@@ -56,7 +58,7 @@ the new `duration`.
 #### extendSelfStake
 
 ```solidity
-function extendSelfStake(uint64 duration) external;
+function extendSelfStake(uint64 duration) external whenNotPaused;
 ```
 
 Set existing self-stake's unlock time to the end of `duration`. Minimum
@@ -67,7 +69,7 @@ The `duration` must end later than the existing self-stake's `unlockTime`.
 #### withdrawSelfStake
 
 ```solidity
-function withdrawSelfStake(uint88 amount) external;
+function withdrawSelfStake(uint88 amount) external whenNotPaused;
 ```
 
 Withdraw `amount` GTC from your unlocked self-stake.
@@ -75,7 +77,7 @@ Withdraw `amount` GTC from your unlocked self-stake.
 #### communityStake
 
 ```solidity
-function communityStake(address stakee, uint88 amount, uint64 duration) external;
+function communityStake(address stakee, uint88 amount, uint64 duration) external whenNotPaused;
 ```
 
 Add `amount` GTC to your stake on `stakee`. Minimum `duration` is 12 weeks,
@@ -90,7 +92,7 @@ extended to the end of the new `duration`.
 #### extendCommunityStake
 
 ```solidity
-function extendCommunityStake(address stakee, uint64 duration) external;
+function extendCommunityStake(address stakee, uint64 duration) external whenNotPaused;
 ```
 
 Set existing community-stake's unlock time to the end of `duration`. Minimum
@@ -101,7 +103,7 @@ The `duration` must end later than the existing community-stake's `unlockTime`.
 #### withdrawCommunityStake
 
 ```solidity
-function withdrawCommunityStake(address stakee, uint88 amount) external;
+function withdrawCommunityStake(address stakee, uint88 amount) external whenNotPaused;
 ```
 
 Withdraw `amount` GTC from your unlocked community-stake on `stakee`.
@@ -109,7 +111,7 @@ Withdraw `amount` GTC from your unlocked community-stake on `stakee`.
 #### slash
 
 ```solidity
-function slash(address[] selfStakers, address[] communityStakers, address[] communityStakees, uint64 percent) external onlyRole(SLASHER_ROLE);
+function slash(address[] selfStakers, address[] communityStakers, address[] communityStakees, uint64 percent) external onlyRole(SLASHER_ROLE) whenNotPaused;
 ```
 
 Slash the provided addresses by `percent`. Addresses in `selfStakers` correspond
@@ -119,13 +121,15 @@ to self-stakes to be slashed. The address in `communityStakers` and
 
 This function can only be called by an address with the `SLASHER_ROLE`.
 
+`percent` must be between 1 and 100.
+
 *Note: All staked GTC is liable to be slashed, even if it is past
 its unlockTime*
 
 #### lockAndBurn
 
 ```solidity
-function lockAndBurn() external;
+function lockAndBurn() external whenNotPaused;
 ```
 
 This function is to be called every three months (`burnRoundMinimumDuration`).
@@ -141,7 +145,7 @@ See [Appendix A: Slashing Rounds](./#appendix-a-slashing-rounds) for more detail
 #### release
 
 ```solidity
-function release(address staker, address stakee, uint88 amountToRelease, uint16 slashRound) external onlyRole(RELEASER_ROLE);
+function release(address staker, address stakee, uint88 amountToRelease, uint16 slashRound) external onlyRole(RELEASER_ROLE) whenNotPaused;
 ```
 
 Release `amountToRelease` GTC from the community stake on `stakee` by `staker`.
@@ -150,6 +154,24 @@ is two or more rounds previous to the current round, then the stake is
 already burned and this function will fail.
 
 This function can only be called by an address with the `RELEASER_ROLE`.
+
+#### pause
+
+```solidity
+function pause() external onlyRole(PAUSER_ROLE) whenNotPaused;
+```
+
+Pause the contract. This function can only be called by an address with the
+`PAUSER_ROLE`.
+
+#### unpause
+
+```solidity
+function unpause() external onlyRole(PAUSER_ROLE) whenPaused;
+```
+
+Unpause the contract. This function can only be called by an address with the
+`PAUSER_ROLE`.
 
 ### Events
 
@@ -227,6 +249,14 @@ bytes32 public constant RELEASER_ROLE = keccak256("RELEASER_ROLE");
 ```
 
 Role held by addresses which are permitted to release an un-burned slash.
+
+#### PAUSER_ROLE
+
+```solidity
+bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
+```
+
+Role held by addresses which are permitted to pause the contract.
 
 #### struct Stake
 
@@ -316,8 +346,8 @@ address public burnAddress
 The address to which burned stake is sent. Only configurable on initialization.
 
 The GTC contract does not allow for transfers to the zero address, so the
-address of the GTC contract itself will be used as the `burnAddress`. Tokens
-transferred to the GTC contract cannot ever be retrieved by anyone.
+address of the GTC contract itself will be used as the `burnAddress` instead.
+Tokens transferred to the GTC contract cannot ever be retrieved by anyone.
 
 #### totalSlashed
 
@@ -367,6 +397,7 @@ care about is enforcing a **minimum** appeal period.
 
 There is a caveat to this if a user is slashed in consecutive rounds. See
 [Appendix B](./#appendix-b-slashing-in-consecutive-rounds) for more details.
+
 ### Appendix B: Slashing in Consecutive Rounds
 
 If a user is slashed, and they had also been slashed in the previous round, then
@@ -485,3 +516,97 @@ sequenceDiagram
   end
   Community->>Staking Contract: Lock and Burn<br />(burns totalSlashed[2] = 17 GTC)
 ```
+
+### Appendix D: Security
+
+#### Reentrancy
+
+This contract is not susceptible to reentrancy attacks. All state changes are
+made before any external calls are made. Additionally, external calls are made
+only to the GTC contract set at initialization, which is a trusted contract.
+
+#### Token Ownership
+
+The tokens in this contract can only be in three states:
+
+1. Held by the contract (staked or frozen)
+2. Burned
+3. Returned to the original owner
+
+The contract *cannot* send tokens to any address other than the original owner,
+or the burn address.
+
+#### Token Amounts
+
+Token amounts are stored as `uint88` which can hold
+309,485,009,821,345,068,724,781,055 or just over 300 million with 18 decimals.
+This is 3x the current GTC supply.
+
+If this contract is used with tokens other than GTC, or if enough GTC were
+minted to exceed this amount, then the contract would need to be updated.
+Currently uint88s are used so that all stake info fits in a single 256 byte
+slot, which provides huge gas savings.
+
+If the current contract needs to be upgraded after the GTC supply exceeds this
+max supply, the following could be done:
+
+*Note: These scenarios are not fully thought out and may need some tweaks to be
+completely viable. These are just high level proof-of-concepts.*
+
+Option 1: Do nothing. In the extremely unlikely event that one of the uint88s
+were to exceed the max uint88, then the contract would revert. In the perfect
+storm, a user could not be slashed in a particular round. But this is
+exceedingly unlikely and not a huge deal anyways. Users could still withdraw
+their existing stake.
+
+Option 2: Add an explicit stake amount cap, user total stake cap, and a round
+cap at MAX_UINT88. This should effectively change nothing, it's the same as
+option 1 but with a clearer intention.
+
+Option 3: If we want to really consider what would be necessary to handle much
+larger amounts (i.e. in a hyperinflation scenario), then the following could be
+done:
+
+1. If necessary the contract can be paused while this upgrade is pending.
+2. The contract could be upgraded to start considering all uint88 `amount`
+   parameters to have e.g. 16 decimals. There could be a
+   `mapping (address => bool) amountUses16Decimals` to track which amounts are
+   using 16 decimals. (Note: This is high level, in reality we need to track
+   self, community, slash round amounts, etc.)
+3. 18 decimal amounts would be divided by 100 to get the new amount, when those
+   amounts are interacted with. Any change leftover could be refunded to The user.
+4. After all 18 decimal stake is withdrawn/burned, the logic to handle
+   both 16 and 18 decimal amounts at the same time could be removed. If
+   some old stakes are holding on, there could be a one-time refund to the user
+   of any leftover change (would need to be a new function, with guarantees
+   to only be called once, etc.).
+
+#### OpenZeppelin Contracts
+
+Where it makes sense, we've used OpenZeppelin's contracts to handle generic
+functionality (access control, pausing, and upgrading). These contracts are
+well-vetted and audited.
+
+#### `block.timestamp` usage
+
+`block.timestamp` is sometimes a source of security issues because nodes can
+tweak it a bit. However, in this contract, `block.timestamp` is only used to
+determine when stake is staked and when it can be withdrawn. This happens over
+long periods of a minimum of 12 weeks.
+
+The danger with `block.timestamp` is when it's used to derive randomness, or
+when changing the value by a few seconds or less could have a significant
+impact. This is not the case in this contract.
+
+An alternative would be to rely on the average block time and calculate block
+numbers, but then this would need to be configurable in case the average block
+time changes in the future. So this would be a source of manipulation and
+potential error. Further, it's simply unnecessary as explained above.
+
+## IIdentityStaking.sol
+
+This contract defines a minimal interface for the data that is likely to be
+useful onchain, for easy integration with other contracts.
+
+There are accessors for [selfStakes](#selfstakes),
+[communityStakes](#communitystakes), and [userTotalStaked](#usertotalstaked).

@@ -1,5 +1,9 @@
 pragma solidity  0.8.23;
 
+// THIS CONTRACT IS ONLY USED AS PART OF TESTING
+// THIS IS NOT PRODUCTION CODE
+// THIS IS NOT AN AUDITED CONTRACT
+
 import "./SafeMath.sol";
 
 contract GTC {
@@ -223,16 +227,9 @@ contract GTC {
      * @return Whether or not the transfer succeeded
      */
     function transferFrom(address src, address dst, uint rawAmount) external returns (bool) {
-        address spender = msg.sender;
-        uint96 spenderAllowance = allowances[src][spender];
         uint96 amount = safe96(rawAmount, "GTC::approve: amount exceeds 96 bits");
 
-        if (true) {
-            uint96 newAllowance = sub96(9999999999999, amount, "GTC::transferFrom: transfer amount exceeds spender allowance");
-            allowances[src][spender] = newAllowance;
-
-            emit Approval(src, spender, newAllowance);
-        }
+        // Removed allowance check for easy testing
 
         _transferTokens(src, dst, amount);
         return true;
