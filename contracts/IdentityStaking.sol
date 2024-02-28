@@ -283,15 +283,17 @@ contract IdentityStaking is
   /// @notice Withdraw unlocked self stake
   /// @param amount The amount to withdraw
   function withdrawSelfStake(uint88 amount) external whenNotPaused {
-    if (selfStakes[msg.sender].unlockTime > block.timestamp) {
+    Stake storage sStake = selfStakes[msg.sender];
+
+    if (sStake.unlockTime > block.timestamp) {
       revert StakeIsLocked();
     }
 
-    if (amount > selfStakes[msg.sender].amount) {
+    if (amount > sStake.amount) {
       revert AmountTooHigh();
     }
 
-    selfStakes[msg.sender].amount -= amount;
+    sStake.amount -= amount;
     userTotalStaked[msg.sender] -= amount;
 
     emit SelfStakeWithdrawn(msg.sender, amount);
@@ -349,7 +351,13 @@ contract IdentityStaking is
   /// @dev The duration must be between 12-104 weeks and 104 weeks, and after any existing lock for this staker+stakee
   ///      The unlock time is calculated as `block.timestamp + duration`
   function extendCommunityStake(address stakee, uint64 duration) external whenNotPaused {
-    if (communityStakes[msg.sender][stakee].amount == 0) {
+    if (stakee == address(0)) {
+      revert AddressCannotBeZero();
+    }
+
+    Stake storage comStake = communityStakes[msg.sender][stakee];
+
+    if (comStake.amount == 0) {
       revert AmountMustBeGreaterThanZero();
     }
 
@@ -360,12 +368,12 @@ contract IdentityStaking is
       unlockTime < block.timestamp + 12 weeks ||
       unlockTime > block.timestamp + 104 weeks ||
       // Must be later than any existing lock
-      unlockTime < communityStakes[msg.sender][stakee].unlockTime
+      unlockTime < comStake.unlockTime
     ) {
       revert InvalidLockTime();
     }
 
-    communityStakes[msg.sender][stakee].unlockTime = unlockTime;
+    comStake.unlockTime = unlockTime;
 
     emit CommunityStake(msg.sender, stakee, 0, unlockTime);
   }
@@ -374,15 +382,25 @@ contract IdentityStaking is
   /// @param stakee The address of the stakee
   /// @param amount The amount to withdraw
   function withdrawCommunityStake(address stakee, uint88 amount) external whenNotPaused {
-    if (communityStakes[msg.sender][stakee].unlockTime > block.timestamp) {
+    if (stakee == address(0)) {
+      revert AddressCannotBeZero();
+    }
+
+    if (amount == 0) {
+      revert AmountMustBeGreaterThanZero();
+    }
+
+    Stake storage comStake = communityStakes[msg.sender][stakee];
+
+    if (comStake.unlockTime > block.timestamp) {
       revert StakeIsLocked();
     }
 
-    if (amount > communityStakes[msg.sender][stakee].amount) {
+    if (amount > comStake.amount) {
       revert AmountTooHigh();
     }
 
-    communityStakes[msg.sender][stakee].amount -= amount;
+    comStake.amount -= amount;
     userTotalStaked[msg.sender] -= amount;
 
     emit CommunityStakeWithdrawn(msg.sender, stakee, amount);
@@ -424,26 +442,25 @@ contract IdentityStaking is
       address staker = selfStakers[i];
       uint88 slashedAmount = (percent * selfStakes[staker].amount) / 100;
 
-      if (
-        selfStakes[staker].slashedInRound != 0 &&
-        selfStakes[staker].slashedInRound != currentSlashRound
-      ) {
-        if (selfStakes[staker].slashedInRound == currentSlashRound - 1) {
+      Stake storage sStake = selfStakes[staker];
+
+      if (sStake.slashedInRound != 0 && sStake.slashedInRound != currentSlashRound) {
+        if (sStake.slashedInRound == currentSlashRound - 1) {
           // If this is a slash from the previous round (not yet burned), move
           // it to the current round
-          totalSlashed[currentSlashRound - 1] -= selfStakes[staker].slashedAmount;
-          totalSlashed[currentSlashRound] += selfStakes[staker].slashedAmount;
+          totalSlashed[currentSlashRound - 1] -= sStake.slashedAmount;
+          totalSlashed[currentSlashRound] += sStake.slashedAmount;
         } else {
           // Otherwise, this is a stale slash and can be overwritten
-          selfStakes[staker].slashedAmount = 0;
+          sStake.slashedAmount = 0;
         }
       }
 
       totalSlashed[currentSlashRound] += slashedAmount;
 
-      selfStakes[staker].slashedInRound = currentSlashRound;
-      selfStakes[staker].slashedAmount += slashedAmount;
-      selfStakes[staker].amount -= slashedAmount;
+      sStake.slashedInRound = currentSlashRound;
+      sStake.slashedAmount += slashedAmount;
+      sStake.amount -= slashedAmount;
 
       userTotalStaked[staker] -= slashedAmount;
 
@@ -455,26 +472,25 @@ contract IdentityStaking is
       address stakee = communityStakees[i];
       uint88 slashedAmount = (percent * communityStakes[staker][stakee].amount) / 100;
 
-      if (
-        communityStakes[staker][stakee].slashedInRound != 0 &&
-        communityStakes[staker][stakee].slashedInRound != currentSlashRound
-      ) {
-        if (communityStakes[staker][stakee].slashedInRound == currentSlashRound - 1) {
+      Stake storage comStake = communityStakes[staker][stakee];
+
+      if (comStake.slashedInRound != 0 && comStake.slashedInRound != currentSlashRound) {
+        if (comStake.slashedInRound == currentSlashRound - 1) {
           // If this is a slash from the previous round (not yet burned), move
           // it to the current round
-          totalSlashed[currentSlashRound - 1] -= communityStakes[staker][stakee].slashedAmount;
-          totalSlashed[currentSlashRound] += communityStakes[staker][stakee].slashedAmount;
+          totalSlashed[currentSlashRound - 1] -= comStake.slashedAmount;
+          totalSlashed[currentSlashRound] += comStake.slashedAmount;
         } else {
           // Otherwise, this is a stale slash and can be overwritten
-          communityStakes[staker][stakee].slashedAmount = 0;
+          comStake.slashedAmount = 0;
         }
       }
 
       totalSlashed[currentSlashRound] += slashedAmount;
 
-      communityStakes[staker][stakee].slashedInRound = currentSlashRound;
-      communityStakes[staker][stakee].slashedAmount += slashedAmount;
-      communityStakes[staker][stakee].amount -= slashedAmount;
+      comStake.slashedInRound = currentSlashRound;
+      comStake.slashedAmount += slashedAmount;
+      comStake.amount -= slashedAmount;
 
       userTotalStaked[staker] -= slashedAmount;
 
@@ -493,12 +509,12 @@ contract IdentityStaking is
     if (block.timestamp - lastBurnTimestamp < burnRoundMinimumDuration) {
       revert MinimumBurnRoundDurationNotMet();
     }
+    uint16 roundToBurn = currentSlashRound - 1;
+    uint88 amountToBurn = totalSlashed[roundToBurn];
 
-    uint88 amountToBurn = totalSlashed[currentSlashRound - 1];
-
-    emit Burn(currentSlashRound - 1, amountToBurn);
-
-    currentSlashRound++;
+    unchecked {
+      ++currentSlashRound;
+    }
     lastBurnTimestamp = block.timestamp;
 
     if (amountToBurn > 0) {
@@ -506,6 +522,8 @@ contract IdentityStaking is
         revert FailedTransfer();
       }
     }
+
+    emit Burn(roundToBurn, amountToBurn);
   }
 
   /// @notice Release slashed funds
@@ -524,6 +542,14 @@ contract IdentityStaking is
   ) external onlyRole(RELEASER_ROLE) whenNotPaused {
     if (slashRound < currentSlashRound - 1) {
       revert RoundAlreadyBurned();
+    }
+
+    if (stakee == address(0)) {
+      revert AddressCannotBeZero();
+    }
+
+    if (staker == address(0)) {
+      revert AddressCannotBeZero();
     }
 
     if (staker == stakee) {
