@@ -512,9 +512,7 @@ contract IdentityStaking is
     uint16 roundToBurn = currentSlashRound - 1;
     uint88 amountToBurn = totalSlashed[roundToBurn];
 
-    unchecked {
-      ++currentSlashRound;
-    }
+    ++currentSlashRound;
     lastBurnTimestamp = block.timestamp;
 
     if (amountToBurn > 0) {
