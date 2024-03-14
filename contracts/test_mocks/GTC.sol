@@ -125,7 +125,7 @@ contract GTC {
      * @param rawAmount The number of tokens to be minted
      */
     function mint(address dst, uint rawAmount) external {
-        require(msg.sender == minter, "GTC::mint: only the minter can mint");
+        // require(msg.sender == minter, "GTC::mint: only the minter can mint");
         // require(block.timestamp >= mintingAllowedAfter, "GTC::mint: minting not allowed yet");
         require(dst != address(0), "GTC::mint: cannot transfer to the zero address");
 

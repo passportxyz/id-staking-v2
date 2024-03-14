@@ -9,7 +9,10 @@ const RPC_URL = "https://eth-sepolia.public.blastapi.io";
 const provider = new ethers.JsonRpcProvider(RPC_URL);
 
 // Initialize signers
-const signer = new ethers.Wallet(process.env.SIGNER_PRIVATE_KEY!, provider);
+const signer = new ethers.Wallet(
+  process.env.SAFE_SIGNER_PRIVATE_KEY!,
+  provider,
+);
 
 const slash = async () => {
   const tx = await generateSlashTx();

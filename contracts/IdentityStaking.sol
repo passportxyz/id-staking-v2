@@ -152,14 +152,21 @@ contract IdentityStaking is
 
   /// @notice Emitted when a slash is submitted
   /// @param staker Address of the staker who is slashed
+  /// @param stakee Address of the stakee who is slashed (same as staker if self-stake)
   /// @param amount The amount slashed in this transaction
   /// @param round The round in which the slash occurred
-  event Slash(address indexed staker, uint88 amount, uint16 round);
+  event Slash(address indexed staker, address indexed stakee, uint88 amount, uint16 round);
 
   /// @notice Emitted when a round is burned
   /// @param round The round that was burned
   /// @param amount The amount of GTC burned in this transaction
   event Burn(uint16 indexed round, uint88 amount);
+
+  /// @notice Emitted when a slash is released
+  /// @param staker The staker's address
+  /// @param stakee The stakee's address
+  /// @param amount The amount released in this transaction
+  event Release(address indexed staker, address indexed stakee, uint88 amount);
 
   /***** SECTION 1: Admin Functions *****/
 
@@ -464,7 +471,7 @@ contract IdentityStaking is
 
       userTotalStaked[staker] -= slashedAmount;
 
-      emit Slash(staker, slashedAmount, currentSlashRound);
+      emit Slash(staker, staker, slashedAmount, currentSlashRound);
     }
 
     for (uint256 i = 0; i < numCommunityStakers; i++) {
@@ -494,7 +501,7 @@ contract IdentityStaking is
 
       userTotalStaked[staker] -= slashedAmount;
 
-      emit Slash(staker, slashedAmount, currentSlashRound);
+      emit Slash(staker, stakee, slashedAmount, currentSlashRound);
     }
   }
 
@@ -575,5 +582,7 @@ contract IdentityStaking is
     }
 
     totalSlashed[slashRound] -= amountToRelease;
+
+    emit Release(staker, stakee, amountToRelease);
   }
 }
