@@ -1280,14 +1280,10 @@ it("should handle staking full GTC supply", async function () {
       .selfStake(maxStakeAmount, twelveWeeksInSeconds),
   )
     .to.emit(this.identityStaking, "SelfStake")
-    .withArgs(
-      this.userAccounts[0].address,
-      maxStakeAmount,
-      (unlockTime: any) =>
-        expect(unlockTime).to.be.closeTo(
-          Math.floor(Date.now() / 1000) + twelveWeeksInSeconds,
-          fiveMinutes,
-        ),
-      twelveWeeksInSeconds,
+    .withArgs(this.userAccounts[0].address, maxStakeAmount, (unlockTime: any) =>
+      expect(unlockTime).to.be.closeTo(
+        Math.floor(Date.now() / 1000) + twelveWeeksInSeconds,
+        fiveMinutes,
+      ),
     );
 });

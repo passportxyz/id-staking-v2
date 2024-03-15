@@ -545,6 +545,275 @@
           ]
         }
       }
+    },
+    "4566139ac731a2db0a06e002de42f9218cd93f288aa0a87aa9dec990014cc6b9": {
+      "address": "0xc6F52B8B00CF94Ff6258141CeBb241fB663Aac80",
+      "txHash": "0xa822ffe8a9ff6c29bcd2f53bd9bf599e7d4df9aa641fb761f8660c8a6afa7ae5",
+      "layout": {
+        "solcVersion": "0.8.23",
+        "storage": [
+          {
+            "label": "userTotalStaked",
+            "offset": 0,
+            "slot": "0",
+            "type": "t_mapping(t_address,t_uint88)",
+            "contract": "IdentityStaking",
+            "src": "contracts/IdentityStaking.sol:88"
+          },
+          {
+            "label": "selfStakes",
+            "offset": 0,
+            "slot": "1",
+            "type": "t_mapping(t_address,t_struct(Stake)2053_storage)",
+            "contract": "IdentityStaking",
+            "src": "contracts/IdentityStaking.sol:91"
+          },
+          {
+            "label": "communityStakes",
+            "offset": 0,
+            "slot": "2",
+            "type": "t_mapping(t_address,t_mapping(t_address,t_struct(Stake)2053_storage))",
+            "contract": "IdentityStaking",
+            "src": "contracts/IdentityStaking.sol:94"
+          },
+          {
+            "label": "currentSlashRound",
+            "offset": 0,
+            "slot": "3",
+            "type": "t_uint16",
+            "contract": "IdentityStaking",
+            "src": "contracts/IdentityStaking.sol:99"
+          },
+          {
+            "label": "burnRoundMinimumDuration",
+            "offset": 2,
+            "slot": "3",
+            "type": "t_uint64",
+            "contract": "IdentityStaking",
+            "src": "contracts/IdentityStaking.sol:104"
+          },
+          {
+            "label": "lastBurnTimestamp",
+            "offset": 0,
+            "slot": "4",
+            "type": "t_uint256",
+            "contract": "IdentityStaking",
+            "src": "contracts/IdentityStaking.sol:107"
+          },
+          {
+            "label": "burnAddress",
+            "offset": 0,
+            "slot": "5",
+            "type": "t_address",
+            "contract": "IdentityStaking",
+            "src": "contracts/IdentityStaking.sol:114"
+          },
+          {
+            "label": "totalSlashed",
+            "offset": 0,
+            "slot": "6",
+            "type": "t_mapping(t_uint16,t_uint88)",
+            "contract": "IdentityStaking",
+            "src": "contracts/IdentityStaking.sol:117"
+          },
+          {
+            "label": "token",
+            "offset": 0,
+            "slot": "7",
+            "type": "t_contract(IERC20)1544",
+            "contract": "IdentityStaking",
+            "src": "contracts/IdentityStaking.sol:120"
+          }
+        ],
+        "types": {
+          "t_address": {
+            "label": "address",
+            "numberOfBytes": "20"
+          },
+          "t_bool": {
+            "label": "bool",
+            "numberOfBytes": "1"
+          },
+          "t_bytes32": {
+            "label": "bytes32",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_address,t_bool)": {
+            "label": "mapping(address => bool)",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_bytes32,t_struct(RoleData)25_storage)": {
+            "label": "mapping(bytes32 => struct AccessControlUpgradeable.RoleData)",
+            "numberOfBytes": "32"
+          },
+          "t_struct(AccessControlStorage)34_storage": {
+            "label": "struct AccessControlUpgradeable.AccessControlStorage",
+            "members": [
+              {
+                "label": "_roles",
+                "type": "t_mapping(t_bytes32,t_struct(RoleData)25_storage)",
+                "offset": 0,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_struct(InitializableStorage)93_storage": {
+            "label": "struct Initializable.InitializableStorage",
+            "members": [
+              {
+                "label": "_initialized",
+                "type": "t_uint64",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "_initializing",
+                "type": "t_bool",
+                "offset": 8,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_struct(PausableStorage)219_storage": {
+            "label": "struct PausableUpgradeable.PausableStorage",
+            "members": [
+              {
+                "label": "_paused",
+                "type": "t_bool",
+                "offset": 0,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_struct(RoleData)25_storage": {
+            "label": "struct AccessControlUpgradeable.RoleData",
+            "members": [
+              {
+                "label": "hasRole",
+                "type": "t_mapping(t_address,t_bool)",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "adminRole",
+                "type": "t_bytes32",
+                "offset": 0,
+                "slot": "1"
+              }
+            ],
+            "numberOfBytes": "64"
+          },
+          "t_uint64": {
+            "label": "uint64",
+            "numberOfBytes": "8"
+          },
+          "t_contract(IERC20)1544": {
+            "label": "contract IERC20",
+            "numberOfBytes": "20"
+          },
+          "t_mapping(t_address,t_mapping(t_address,t_struct(Stake)2053_storage))": {
+            "label": "mapping(address => mapping(address => struct IdentityStaking.Stake))",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_address,t_struct(Stake)2053_storage)": {
+            "label": "mapping(address => struct IdentityStaking.Stake)",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_address,t_uint88)": {
+            "label": "mapping(address => uint88)",
+            "numberOfBytes": "32"
+          },
+          "t_mapping(t_uint16,t_uint88)": {
+            "label": "mapping(uint16 => uint88)",
+            "numberOfBytes": "32"
+          },
+          "t_struct(Stake)2053_storage": {
+            "label": "struct IdentityStaking.Stake",
+            "members": [
+              {
+                "label": "unlockTime",
+                "type": "t_uint64",
+                "offset": 0,
+                "slot": "0"
+              },
+              {
+                "label": "amount",
+                "type": "t_uint88",
+                "offset": 8,
+                "slot": "0"
+              },
+              {
+                "label": "slashedAmount",
+                "type": "t_uint88",
+                "offset": 19,
+                "slot": "0"
+              },
+              {
+                "label": "slashedInRound",
+                "type": "t_uint16",
+                "offset": 30,
+                "slot": "0"
+              }
+            ],
+            "numberOfBytes": "32"
+          },
+          "t_uint16": {
+            "label": "uint16",
+            "numberOfBytes": "2"
+          },
+          "t_uint256": {
+            "label": "uint256",
+            "numberOfBytes": "32"
+          },
+          "t_uint88": {
+            "label": "uint88",
+            "numberOfBytes": "11"
+          }
+        },
+        "namespaces": {
+          "erc7201:openzeppelin.storage.Pausable": [
+            {
+              "contract": "PausableUpgradeable",
+              "label": "_paused",
+              "type": "t_bool",
+              "src": "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol:21",
+              "offset": 0,
+              "slot": "0"
+            }
+          ],
+          "erc7201:openzeppelin.storage.AccessControl": [
+            {
+              "contract": "AccessControlUpgradeable",
+              "label": "_roles",
+              "type": "t_mapping(t_bytes32,t_struct(RoleData)25_storage)",
+              "src": "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol:61",
+              "offset": 0,
+              "slot": "0"
+            }
+          ],
+          "erc7201:openzeppelin.storage.Initializable": [
+            {
+              "contract": "Initializable",
+              "label": "_initialized",
+              "type": "t_uint64",
+              "src": "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol:69",
+              "offset": 0,
+              "slot": "0"
+            },
+            {
+              "contract": "Initializable",
+              "label": "_initializing",
+              "type": "t_bool",
+              "src": "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol:73",
+              "offset": 8,
+              "slot": "0"
+            }
+          ]
+        }
+      }
     }
   }
 }

@@ -123,23 +123,20 @@ contract IdentityStaking is
   /// @param staker The staker's address
   /// @param amount The additional amount added for this particular transaction
   /// @param unlockTime Unlock time for the full self-stake amount for this staker
-  /// @param lockDuration The duration of the lock
   /// @dev `amount` could be `0` for an extension
-  event SelfStake(address indexed staker, uint88 amount, uint64 unlockTime, uint64 lockDuration);
+  event SelfStake(address indexed staker, uint88 amount, uint64 unlockTime);
 
   /// @notice Emitted when a community stake is added/increased/extended
   /// @param staker The staker's address
   /// @param stakee The stakee's address
   /// @param amount The additional amount added for this particular transaction
   /// @param unlockTime Unlock time for the full community stake amount for this staker on this stakee
-  /// @param lockDuration The duration of the lock
   /// @dev `amount` could be `0` for an extension
   event CommunityStake(
     address indexed staker,
     address indexed stakee,
     uint88 amount,
-    uint64 unlockTime,
-    uint64 lockDuration
+    uint64 unlockTime
   );
 
   /// @notice Emitted when a self-stake is withdrawn
@@ -257,7 +254,7 @@ contract IdentityStaking is
     selfStakes[msg.sender].unlockTime = unlockTime;
     userTotalStaked[msg.sender] += amount;
 
-    emit SelfStake(msg.sender, amount, unlockTime, duration);
+    emit SelfStake(msg.sender, amount, unlockTime);
 
     if (!token.transferFrom(msg.sender, address(this), amount)) {
       revert FailedTransfer();
@@ -287,7 +284,7 @@ contract IdentityStaking is
 
     selfStakes[msg.sender].unlockTime = unlockTime;
 
-    emit SelfStake(msg.sender, 0, unlockTime, duration);
+    emit SelfStake(msg.sender, 0, unlockTime);
   }
 
   /// @notice Withdraw unlocked self stake
@@ -348,7 +345,7 @@ contract IdentityStaking is
     communityStakes[msg.sender][stakee].unlockTime = unlockTime;
     userTotalStaked[msg.sender] += amount;
 
-    emit CommunityStake(msg.sender, stakee, amount, unlockTime, duration);
+    emit CommunityStake(msg.sender, stakee, amount, unlockTime);
 
     if (!token.transferFrom(msg.sender, address(this), amount)) {
       revert FailedTransfer();
@@ -385,7 +382,7 @@ contract IdentityStaking is
 
     comStake.unlockTime = unlockTime;
 
-    emit CommunityStake(msg.sender, stakee, 0, unlockTime, duration);
+    emit CommunityStake(msg.sender, stakee, 0, unlockTime);
   }
 
   /// @notice Withdraw unlocked community stake on a stakee
