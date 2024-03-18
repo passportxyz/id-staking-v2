@@ -378,6 +378,20 @@ contract IdentityStaking is
     emit CommunityStake(msg.sender, stakee, 0, unlockTime);
   }
 
+  /// @notice Extend lock period for community stakes on a list of stakee
+  /// @param stakees The addresses of the stakees
+  /// @param duration The duration in seconds for the new lock period
+  /// @dev The duration must be between 12-104 weeks and 104 weeks, and after any existing lock for any of the staker+stakee pairs
+  ///      The unlock time is calculated as `block.timestamp + duration`
+  function extendMultipleCommunityStake(
+    address[] calldata stakees,
+    uint64 duration
+  ) external whenNotPaused {
+    for (uint i = 0; i < stakees.length; i++) {
+      this.extendCommunityStake(stakees[i], duration);
+    }
+  }
+
   /// @notice Withdraw unlocked community stake on a stakee
   /// @param stakee The address of the stakee
   /// @param amount The amount to withdraw
