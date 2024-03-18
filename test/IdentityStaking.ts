@@ -43,6 +43,7 @@ describe("IdentityStaking", function () {
         this.owner.address,
         [this.owner.address],
         [this.owner.address],
+        [this.owner.address],
       );
     for (let i = 0; i < this.userAccounts.length; i++) {
       await this.gtc
@@ -1112,6 +1113,16 @@ describe("IdentityStaking", function () {
         "AccessControlUnauthorizedAccount",
       );
     });
+
+    it("should fail to lock and burn without BURNER_ROLE", async function () {
+      const nonBurner = this.userAccounts[0];
+      await expect(
+        this.identityStaking.connect(nonBurner).lockAndBurn(),
+      ).to.be.revertedWithCustomError(
+        this.identityStaking,
+        "AccessControlUnauthorizedAccount",
+      );
+    });
   });
 
   describe("pause tests", function () {
@@ -1172,7 +1183,7 @@ describe("IdentityStaking", function () {
       ).to.be.revertedWithCustomError(this.identityStaking, "EnforcedPause");
 
       await expect(
-        this.identityStaking.connect(this.userAccounts[0]).lockAndBurn(),
+        this.identityStaking.connect(this.owner).lockAndBurn(),
       ).to.be.revertedWithCustomError(this.identityStaking, "EnforcedPause");
 
       await expect(
@@ -1208,6 +1219,7 @@ describe("IdentityStaking", function () {
           "0x0000000000000000000000000000000000000001",
           "0x0000000000000000000000000000000000000002",
           this.owner.address,
+          [this.owner.address],
           [this.owner.address],
           [this.owner.address],
         ],
@@ -1280,6 +1292,7 @@ it("should handle staking full GTC supply", async function () {
       gtcAddress,
       "0x0000000000000000000000000000000000000001",
       this.owner.address,
+      [this.owner.address],
       [this.owner.address],
       [this.owner.address],
     );

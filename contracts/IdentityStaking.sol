@@ -67,6 +67,9 @@ contract IdentityStaking is
   /// @notice Role held by addresses which are permitted to release an un-burned slash.
   bytes32 public constant RELEASER_ROLE = keccak256("RELEASER_ROLE");
 
+  /// @notice Role held by addresses which are permitted to lock and burn
+  bytes32 public constant BURNER_ROLE = keccak256("BURNER_ROLE");
+
   /// @notice Role held by addresses which are permitted to pause the contract.
   bytes32 public constant PAUSER_ROLE = keccak256("PAUSER_ROLE");
 
@@ -176,12 +179,14 @@ contract IdentityStaking is
   /// @param initialAdmin The initial address to assign the DEFAULT_ADMIN_ROLE
   /// @param initialSlashers The initial addresses to assign the SLASHER_ROLE
   /// @param initialReleasers The initial addresses to assign the RELEASER_ROLE
+  /// @param initialBurners The initial addresses to assign the BURNER_ROLE
   function initialize(
     address tokenAddress,
     address _burnAddress,
     address initialAdmin,
     address[] calldata initialSlashers,
-    address[] calldata initialReleasers
+    address[] calldata initialReleasers,
+    address[] calldata initialBurners
   ) public initializer {
     if (tokenAddress == address(0)) {
       revert AddressCannotBeZero();
@@ -192,6 +197,7 @@ contract IdentityStaking is
 
     _grantRole(DEFAULT_ADMIN_ROLE, initialAdmin);
     _grantRole(PAUSER_ROLE, initialAdmin);
+    _grantRole(BURNER_ROLE, initialAdmin);
 
     for (uint256 i = 0; i < initialSlashers.length; i++) {
       _grantRole(SLASHER_ROLE, initialSlashers[i]);
@@ -199,6 +205,10 @@ contract IdentityStaking is
 
     for (uint256 i = 0; i < initialReleasers.length; i++) {
       _grantRole(RELEASER_ROLE, initialReleasers[i]);
+    }
+
+    for (uint256 i = 0; i < initialBurners.length; i++) {
+      _grantRole(BURNER_ROLE, initialBurners[i]);
     }
 
     token = IERC20(tokenAddress);
@@ -512,7 +522,7 @@ contract IdentityStaking is
   /// @dev Anyone can call this function, the `burnRoundMinimumDuration` keeps everything in check
   ///      This is all about enforcing a minimum appeal period for a slash
   ///      The "locking" is implicit, in that the previous round is always burned and there is a minimum duration between burns
-  function lockAndBurn() external whenNotPaused {
+  function lockAndBurn() external onlyRole(BURNER_ROLE) whenNotPaused {
     if (block.timestamp - lastBurnTimestamp < burnRoundMinimumDuration) {
       revert MinimumBurnRoundDurationNotMet();
     }
