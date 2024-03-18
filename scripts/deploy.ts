@@ -25,8 +25,9 @@ async function main() {
     IdentityStaking,
     [
       await gtc.getAddress(),
-      await gtc.getAddress(),
+      process.env.BURN_ADDRESS as string,
       owner.address,
+      [owner.address],
       [owner.address],
       [owner.address],
     ],
