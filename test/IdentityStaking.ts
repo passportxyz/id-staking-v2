@@ -245,7 +245,7 @@ describe("IdentityStaking", function () {
       expect(await this.identityStaking.totalSlashed(1)).to.equal(270000);
     });
 
-    it("should release given a valid request", async function () {
+    it("should release given a valid request (and update userTotalStaked)", async function () {
       await this.identityStaking
         .connect(this.owner)
         .slash(
@@ -266,6 +266,11 @@ describe("IdentityStaking", function () {
 
       expect(await this.identityStaking.totalSlashed(1)).to.equal(300000);
 
+      // Check that the userTotalStaked has been updated
+      expect(
+        await this.identityStaking.userTotalStaked(this.communityStakers[0]),
+      ).to.equal(100000);
+
       await this.identityStaking
         .connect(this.owner)
         .release(this.communityStakers[0], this.communityStakees[0], 250, 1);
@@ -273,6 +278,11 @@ describe("IdentityStaking", function () {
       await this.identityStaking
         .connect(this.owner)
         .release(this.communityStakers[0], this.communityStakees[0], 250, 1);
+
+      // Check that the userTotalStaked has been updated
+      expect(
+        await this.identityStaking.userTotalStaked(this.communityStakers[0]),
+      ).to.equal(100500);
 
       expect(
         (

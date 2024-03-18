@@ -550,6 +550,7 @@ contract IdentityStaking is
       revert AddressCannotBeZero();
     }
 
+    userTotalStaked[staker] += amountToRelease;
     if (staker == stakee) {
       if (amountToRelease > selfStakes[staker].slashedAmount) {
         revert FundsNotAvailableToRelease();
