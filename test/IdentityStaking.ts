@@ -12,6 +12,7 @@ function shuffleArray(array: any[]) {
 
 const fiveMinutes = 5 * 60;
 const twelveWeeksInSeconds = 12 * 7 * 24 * 60 * 60 + 1; // 12 weeks in seconds
+const twentyFourWeeksInSeconds = 12 * 7 * 24 * 60 * 60 + 1; // 12 weeks in seconds
 
 describe("IdentityStaking", function () {
   this.beforeEach(async function () {
@@ -687,6 +688,27 @@ describe("IdentityStaking", function () {
       expect(stake[3]).to.deep.equal(0n);
     });
 
+    it("should allow multi community staking", async function () {
+      const unlockTime =
+        twelveWeeksInSeconds + Math.floor(new Date().getTime() / 1000);
+
+      await this.identityStaking
+        .connect(this.userAccounts[0])
+        .multipleCommunityStakes(
+          [this.userAccounts[1].address, this.userAccounts[2].address], [100000n, 200000n], 
+          [twelveWeeksInSeconds, twentyFourWeeksInSeconds]);
+
+      const stake = await this.identityStaking.communityStakes(
+        this.userAccounts[0],
+        this.userAccounts[1],
+      );
+
+      expect(stake[0]).to.be.closeTo(unlockTime, fiveMinutes);
+      expect(stake[1]).to.deep.equal(100000n);
+      expect(stake[2]).to.deep.equal(0n);
+      expect(stake[3]).to.deep.equal(0n);
+    });
+
     it("should allow withdrawal of community stake", async function () {
       await this.identityStaking
         .connect(this.userAccounts[0])
@@ -781,6 +803,51 @@ describe("IdentityStaking", function () {
         stakee.address,
       );
       expect(stake.unlockTime).to.be.closeTo(
+        newDuration + Math.floor(new Date().getTime() / 1000),
+        fiveMinutes,
+      );
+    });
+
+    it("should extend the unlock time for multiple community stakes", async function () {
+      const initialDuration = 12 * 7 * 24 * 60 * 60; // 12 weeks
+      const newDuration = 24 * 7 * 24 * 60 * 60; // 24 weeks
+      const staker = this.userAccounts[0];
+      const stakee1 = this.userAccounts[1];
+      const stakee2 = this.userAccounts[2];
+
+      // First, create stakes
+      await this.identityStaking
+        .connect(staker)
+        .communityStake(stakee1.address, 100000, initialDuration);
+
+      await this.identityStaking
+        .connect(staker)
+        .communityStake(stakee2.address, 100000, initialDuration);
+
+      // Extend both stakes
+      await this.identityStaking
+        .connect(staker)
+        .extendMultipleCommunityStake(
+          [stakee1.address, stakee2.address],
+          newDuration,
+        );
+
+      // Check if the stake was extended correctly
+      // Check stake 1
+      const stake1 = await this.identityStaking.communityStakes(
+        staker.address,
+        stakee1.address,
+      );
+      expect(stake1.unlockTime).to.be.closeTo(
+        newDuration + Math.floor(new Date().getTime() / 1000),
+        fiveMinutes,
+      );
+      // Check stake 2
+      const stake2 = await this.identityStaking.communityStakes(
+        staker.address,
+        stakee2.address,
+      );
+      expect(stake2.unlockTime).to.be.closeTo(
         newDuration + Math.floor(new Date().getTime() / 1000),
         fiveMinutes,
       );
