@@ -474,6 +474,53 @@ contract IdentityStaking is
     }
   }
 
+  /// @notice Withdraw multiple unlocked community stake on a stakee
+  /// @param stakees The address of the stakee
+  /// @param amounts The amount to withdraw
+  function withdrawMultipleCommunityStake(
+    address[] calldata stakees,
+    uint88[] calldata amounts
+  ) external whenNotPaused {
+    if (stakees.length != amounts.length) {
+      revert ArrayLengthMismatch();
+    }
+    uint256 totalAmountToWithdraw = 0;
+
+    for (uint i = 0; i < stakees.length; i++) {
+      address stakee = stakees[i];
+      uint88 amount = amounts[i];
+
+      if (stakee == address(0)) {
+        revert AddressCannotBeZero();
+      }
+
+      if (amount == 0) {
+        revert AmountMustBeGreaterThanZero();
+      }
+
+      Stake storage comStake = communityStakes[msg.sender][stakee];
+
+      if (comStake.unlockTime > block.timestamp) {
+        revert StakeIsLocked();
+      }
+
+      if (amount > comStake.amount) {
+        revert AmountTooHigh();
+      }
+
+      comStake.amount -= amount;
+      userTotalStaked[msg.sender] -= amount;
+
+      emit CommunityStakeWithdrawn(msg.sender, stakee, amount);
+
+      totalAmountToWithdraw += amount;
+    }
+
+    if (!token.transfer(msg.sender, totalAmountToWithdraw)) {
+      revert FailedTransfer();
+    }
+  }
+
   /***** SECTION 3: Slashing Functions *****/
 
   /// @notice Submit a slash
