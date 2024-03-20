@@ -61,6 +61,9 @@ contract IdentityStaking is
   /// @dev The minimum burn round duration has not been met, controlled by the `burnRoundMinimumDuration`
   error MinimumBurnRoundDurationNotMet();
 
+  /// @dev Input array lengths do not match
+  error ArrayLengthMismatch();
+
   /// @notice Role held by addresses which are permitted to submit a slash.
   bytes32 public constant SLASHER_ROLE = keccak256("SLASHER_ROLE");
 
@@ -370,6 +373,10 @@ contract IdentityStaking is
     uint88[] calldata amounts,
     uint64[] calldata durations
   ) external whenNotPaused {
+    if (stakees.length != amounts.length || stakees.length != durations.length) {
+      revert ArrayLengthMismatch();
+    }
+
     for (uint i = 0; i < stakees.length; i++) {
       _communityStake(stakees[i], amounts[i], durations[i]);
     }
@@ -419,15 +426,19 @@ contract IdentityStaking is
 
   /// @notice Extend lock period for community stakes on a list of stakee
   /// @param stakees The addresses of the stakees
-  /// @param duration The duration in seconds for the new lock period
+  /// @param durations The duration for each stake in seconds for the new lock period
   /// @dev The duration must be between 12-104 weeks and 104 weeks, and after any existing lock for any of the staker+stakee pairs
   ///      The unlock time is calculated as `block.timestamp + duration`
   function extendMultipleCommunityStake(
     address[] calldata stakees,
-    uint64 duration
+    uint64[] calldata durations
   ) external whenNotPaused {
+    if (stakees.length != durations.length) {
+      revert ArrayLengthMismatch();
+    }
+
     for (uint i = 0; i < stakees.length; i++) {
-      _extendCommunityStake(stakees[i], duration);
+      _extendCommunityStake(stakees[i], durations[i]);
     }
   }
 
