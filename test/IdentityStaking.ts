@@ -11,7 +11,8 @@ function shuffleArray(array: any[]) {
 }
 
 const fiveMinutes = 5 * 60;
-const twelveWeeksInSeconds = 12 * 7 * 24 * 60 * 60 + 1; // 12 weeks in seconds
+const twelveWeeksInSeconds = 12 * 7 * 24 * 60 * 60; // 12 weeks in seconds
+const twentyFourWeeksInSeconds = 24 * 7 * 24 * 60 * 60; // 24 weeks in seconds
 
 describe("IdentityStaking", function () {
   this.beforeEach(async function () {
@@ -698,6 +699,29 @@ describe("IdentityStaking", function () {
       expect(stake[3]).to.deep.equal(0n);
     });
 
+    it("should allow multi community staking", async function () {
+      const unlockTime =
+        twelveWeeksInSeconds + Math.floor(new Date().getTime() / 1000);
+
+      await this.identityStaking
+        .connect(this.userAccounts[0])
+        .multipleCommunityStakes(
+          [this.userAccounts[1].address, this.userAccounts[2].address],
+          [100000n, 200000n],
+          [twelveWeeksInSeconds, twentyFourWeeksInSeconds],
+        );
+
+      const stake = await this.identityStaking.communityStakes(
+        this.userAccounts[0],
+        this.userAccounts[1],
+      );
+
+      expect(stake[0]).to.be.closeTo(unlockTime, fiveMinutes);
+      expect(stake[1]).to.deep.equal(100000n);
+      expect(stake[2]).to.deep.equal(0n);
+      expect(stake[3]).to.deep.equal(0n);
+    });
+
     it("should allow withdrawal of community stake", async function () {
       await this.identityStaking
         .connect(this.userAccounts[0])
@@ -728,6 +752,59 @@ describe("IdentityStaking", function () {
           )
         ).amount,
       ).to.equal(0);
+    });
+
+    it("should allow withdrawal of multiple community stakes", async function () {
+      await this.identityStaking
+        .connect(this.userAccounts[0])
+        .multipleCommunityStakes(
+          [this.userAccounts[1].address, this.userAccounts[2].address],
+          [100000n, 200000n],
+          [twelveWeeksInSeconds, twentyFourWeeksInSeconds],
+        );
+
+      const contractAddress = await this.identityStaking.getAddress();
+
+      expect(await this.gtc.balanceOf(this.userAccounts[0].address)).to.equal(
+        100000000000 - 100000 - 200000,
+      );
+
+      // Check the balance in the staking contract
+      expect(await this.gtc.balanceOf(contractAddress)).to.equal(300000);
+
+      await time.increase(twentyFourWeeksInSeconds + 1);
+
+      await this.identityStaking
+        .connect(this.userAccounts[0])
+        .withdrawMultipleCommunityStake(
+          [this.userAccounts[1].address, this.userAccounts[2].address],
+          [100000n, 200000n],
+        );
+
+      expect(await this.gtc.balanceOf(this.userAccounts[0])).to.equal(
+        100000000000,
+      );
+
+      expect(await this.gtc.balanceOf(contractAddress)).to.equal(0);
+      expect(
+        (
+          await this.identityStaking.communityStakes(
+            this.userAccounts[0],
+            this.userAccounts[1],
+          )
+        ).amount,
+      ).to.equal(0);
+      expect(
+        (
+          await this.identityStaking.communityStakes(
+            this.userAccounts[0],
+            this.userAccounts[2],
+          )
+        ).amount,
+      ).to.equal(0);
+
+      // Check the balance in the staking contract
+      // expect(await this.gtc.balanceOf(contractAddress)).to.equal(0);
     });
 
     it("should extend the unlock time for self stake", async function () {
@@ -797,6 +874,52 @@ describe("IdentityStaking", function () {
       );
     });
 
+    it("should extend the unlock time for multiple community stakes", async function () {
+      const initialDuration = 12 * 7 * 24 * 60 * 60; // 12 weeks
+      const newDuration1 = 24 * 7 * 24 * 60 * 60; // 24 weeks
+      const newDuration2 = 24 * 7 * 24 * 60 * 60 * 2; // 48 weeks
+      const staker = this.userAccounts[0];
+      const stakee1 = this.userAccounts[1];
+      const stakee2 = this.userAccounts[2];
+
+      // First, create stakes
+      await this.identityStaking
+        .connect(staker)
+        .communityStake(stakee1.address, 100000, initialDuration);
+
+      await this.identityStaking
+        .connect(staker)
+        .communityStake(stakee2.address, 100000, initialDuration);
+
+      // Extend both stakes
+      await this.identityStaking
+        .connect(staker)
+        .extendMultipleCommunityStake(
+          [stakee1.address, stakee2.address],
+          [newDuration1, newDuration2],
+        );
+
+      // Check if the stake was extended correctly
+      // Check stake 1
+      const stake1 = await this.identityStaking.communityStakes(
+        staker.address,
+        stakee1.address,
+      );
+      expect(stake1.unlockTime).to.be.closeTo(
+        newDuration1 + Math.floor(new Date().getTime() / 1000),
+        fiveMinutes,
+      );
+      // Check stake 2
+      const stake2 = await this.identityStaking.communityStakes(
+        staker.address,
+        stakee2.address,
+      );
+      expect(stake2.unlockTime).to.be.closeTo(
+        newDuration2 + Math.floor(new Date().getTime() / 1000),
+        fiveMinutes,
+      );
+    });
+
     it("should handle edge case for extending community stake", async function () {
       const staker = this.userAccounts[0];
       const stakee = this.userAccounts[1];
@@ -821,6 +944,51 @@ describe("IdentityStaking", function () {
     });
 
     describe("failed stake tests", function () {
+      it("should revert when extendMultipleCommunityStake is called with arrays of different lengths", async function () {
+        const staker = this.userAccounts[0];
+
+        await expect(
+          this.identityStaking
+            .connect(staker)
+            .extendMultipleCommunityStake([staker.address], [1000000, 2000000]),
+        ).to.be.revertedWithCustomError(
+          this.identityStaking,
+          "ArrayLengthMismatch",
+        );
+      });
+
+      it("should revert when multipleCommunityStakes is called with arrays of different lengths", async function () {
+        const staker = this.userAccounts[0];
+
+        // 1st and 2nd arrays are different in length
+        await expect(
+          this.identityStaking
+            .connect(staker)
+            .multipleCommunityStakes(
+              [staker.address],
+              [1000000, 2000000],
+              [1000000, 2000000],
+            ),
+        ).to.be.revertedWithCustomError(
+          this.identityStaking,
+          "ArrayLengthMismatch",
+        );
+
+        // 1st and 3rd arrays are different in length (and also 2nd and 3rd)
+        await expect(
+          this.identityStaking
+            .connect(staker)
+            .multipleCommunityStakes(
+              [staker.address],
+              [1000000],
+              [1000000, 2000000],
+            ),
+        ).to.be.revertedWithCustomError(
+          this.identityStaking,
+          "ArrayLengthMismatch",
+        );
+      });
+
       it("should revert when community staking on the zero address", async function () {
         await expect(
           this.identityStaking
@@ -973,7 +1141,9 @@ describe("IdentityStaking", function () {
           "InvalidLockTime",
         );
       });
+    });
 
+    describe("failed withdraw tests", function () {
       it("should not allow withdrawal of self stake before unlock time", async function () {
         await this.identityStaking
           .connect(this.userAccounts[0])
@@ -998,9 +1168,27 @@ describe("IdentityStaking", function () {
         ).to.be.revertedWithCustomError(this.identityStaking, "StakeIsLocked");
       });
 
-      it("should not allow withdrawal exceeding self stake amount", async function () {
-        await time.increase(twelveWeeksInSeconds + 1);
+      it("should not allow multiple withdrawal of community stakes if any of the stakes is before unlock time", async function () {
+        await this.identityStaking
+          .connect(this.userAccounts[0])
+          .multipleCommunityStakes(
+            [this.userAccounts[1], this.userAccounts[2]],
+            [100000n, 200000n],
+            [twelveWeeksInSeconds, twentyFourWeeksInSeconds],
+          );
 
+        await time.increase(twelveWeeksInSeconds);
+        await expect(
+          this.identityStaking
+            .connect(this.userAccounts[0])
+            .withdrawMultipleCommunityStake(
+              [this.userAccounts[1], this.userAccounts[2]],
+              [100000n, 200000n],
+            ),
+        ).to.be.revertedWithCustomError(this.identityStaking, "StakeIsLocked");
+      });
+
+      it("should not allow withdrawal exceeding self stake amount", async function () {
         await expect(
           this.identityStaking
             .connect(this.userAccounts[0])
@@ -1009,12 +1197,31 @@ describe("IdentityStaking", function () {
       });
 
       it("should not allow withdrawal exceeding community stake amount", async function () {
-        await time.increase(twelveWeeksInSeconds + 1);
-
         await expect(
           this.identityStaking
             .connect(this.userAccounts[0])
             .withdrawCommunityStake(this.userAccounts[1], 100001),
+        ).to.be.revertedWithCustomError(this.identityStaking, "AmountTooHigh");
+      });
+
+      it("should not allow multiple withdrawals of community stakes if any request is exceeding community stake amount", async function () {
+        await this.identityStaking
+          .connect(this.userAccounts[0])
+          .multipleCommunityStakes(
+            [this.userAccounts[1], this.userAccounts[2]],
+            [100000n, 200000n],
+            [twelveWeeksInSeconds, twentyFourWeeksInSeconds],
+          );
+
+        await time.increase(twentyFourWeeksInSeconds + 1);
+
+        await expect(
+          this.identityStaking
+            .connect(this.userAccounts[0])
+            .withdrawMultipleCommunityStake(
+              [this.userAccounts[1], this.userAccounts[2]],
+              [100000n, 200001n],
+            ),
         ).to.be.revertedWithCustomError(this.identityStaking, "AmountTooHigh");
       });
     });

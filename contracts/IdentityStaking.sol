@@ -61,6 +61,9 @@ contract IdentityStaking is
   /// @dev The minimum burn round duration has not been met, controlled by the `burnRoundMinimumDuration`
   error MinimumBurnRoundDurationNotMet();
 
+  /// @dev Input array lengths do not match
+  error ArrayLengthMismatch();
+
   /// @notice Role held by addresses which are permitted to submit a slash.
   bytes32 public constant SLASHER_ROLE = keccak256("SLASHER_ROLE");
 
@@ -328,7 +331,7 @@ contract IdentityStaking is
   ///      The amount must be greater than zero
   ///      The unlock time is calculated as `block.timestamp + duration`
   ///      If there is any existing stake by this staker on this stakee, the unlock time is extended for the entire stake amount
-  function communityStake(address stakee, uint88 amount, uint64 duration) external whenNotPaused {
+  function _communityStake(address stakee, uint88 amount, uint64 duration) private {
     if (stakee == msg.sender) {
       revert CannotStakeOnSelf();
     }
@@ -362,12 +365,46 @@ contract IdentityStaking is
     }
   }
 
+  /// @notice Add community stake on a stakee
+  /// @param stakee The address of the stakee
+  /// @param amount The amount to stake
+  /// @param duration The duration in seconds of the stake lock period
+  /// @dev The duration must be between 12-104 weeks and 104 weeks, and after any existing lock for this staker+stakee
+  ///      The amount must be greater than zero
+  ///      The unlock time is calculated as `block.timestamp + duration`
+  ///      If there is any existing stake by this staker on this stakee, the unlock time is extended for the entire stake amount
+  function communityStake(address stakee, uint88 amount, uint64 duration) external whenNotPaused {
+    _communityStake(stakee, amount, duration);
+  }
+
+  /// @notice Add community stake on a stakee
+  /// @param stakees The list of addresses the stakees
+  /// @param amounts The amount to stake on each stakee
+  /// @param durations The duration in seconds of the stake lock period for each stake
+  /// @dev The duration must be between 12-104 weeks and 104 weeks, and after any existing lock for this staker+stakee
+  ///      The amount must be greater than zero
+  ///      The unlock time is calculated as `block.timestamp + duration`
+  ///      If there is any existing stake by this staker on this stakee, the unlock time is extended for the entire stake amount
+  function multipleCommunityStakes(
+    address[] calldata stakees,
+    uint88[] calldata amounts,
+    uint64[] calldata durations
+  ) external whenNotPaused {
+    if (stakees.length != amounts.length || stakees.length != durations.length) {
+      revert ArrayLengthMismatch();
+    }
+
+    for (uint i = 0; i < stakees.length; i++) {
+      _communityStake(stakees[i], amounts[i], durations[i]);
+    }
+  }
+
   /// @notice Extend lock period for community stake on a stakee
   /// @param stakee The address of the stakee
   /// @param duration The duration in seconds for the new lock period
   /// @dev The duration must be between 12-104 weeks and 104 weeks, and after any existing lock for this staker+stakee
   ///      The unlock time is calculated as `block.timestamp + duration`
-  function extendCommunityStake(address stakee, uint64 duration) external whenNotPaused {
+  function _extendCommunityStake(address stakee, uint64 duration) private {
     if (stakee == address(0)) {
       revert AddressCannotBeZero();
     }
@@ -395,10 +432,39 @@ contract IdentityStaking is
     emit CommunityStake(msg.sender, stakee, 0, unlockTime);
   }
 
-  /// @notice Withdraw unlocked community stake on a stakee
+  /// @notice Extend lock period for community stake on a stakee
+  /// @param stakee The address of the stakee
+  /// @param duration The duration in seconds for the new lock period
+  /// @dev The duration must be between 12-104 weeks and 104 weeks, and after any existing lock for this staker+stakee
+  ///      The unlock time is calculated as `block.timestamp + duration`
+  function extendCommunityStake(address stakee, uint64 duration) external whenNotPaused {
+    _extendCommunityStake(stakee, duration);
+  }
+
+  /// @notice Extend lock period for community stakes on a list of stakee
+  /// @param stakees The addresses of the stakees
+  /// @param durations The duration for each stake in seconds for the new lock period
+  /// @dev The duration must be between 12-104 weeks and 104 weeks, and after any existing lock for any of the staker+stakee pairs
+  ///      The unlock time is calculated as `block.timestamp + duration`
+  function extendMultipleCommunityStake(
+    address[] calldata stakees,
+    uint64[] calldata durations
+  ) external whenNotPaused {
+    if (stakees.length != durations.length) {
+      revert ArrayLengthMismatch();
+    }
+
+    for (uint i = 0; i < stakees.length; i++) {
+      _extendCommunityStake(stakees[i], durations[i]);
+    }
+  }
+
+  /// @notice Prepare withdraw from community stake. This function will check if the stake is unlocked and
+  /// substract the desired amount from the stake object, emit the event and it will return the amount that
+  /// needs to be transfered (but it will not execute the transfer).
   /// @param stakee The address of the stakee
   /// @param amount The amount to withdraw
-  function withdrawCommunityStake(address stakee, uint88 amount) external whenNotPaused {
+  function _prepareWithdrawCommunityStake(address stakee, uint88 amount) private {
     if (stakee == address(0)) {
       revert AddressCannotBeZero();
     }
@@ -421,8 +487,37 @@ contract IdentityStaking is
     userTotalStaked[msg.sender] -= amount;
 
     emit CommunityStakeWithdrawn(msg.sender, stakee, amount);
+  }
 
+  /// @notice Withdraw unlocked community stake on a stakee
+  /// @param stakee The address of the stakee
+  /// @param amount The amount to withdraw
+  function withdrawCommunityStake(address stakee, uint88 amount) external whenNotPaused {
+    _prepareWithdrawCommunityStake(stakee, amount);
     if (!token.transfer(msg.sender, amount)) {
+      revert FailedTransfer();
+    }
+  }
+
+  /// @notice Withdraw multiple unlocked community stakes
+  /// @param stakees The address of the stakees
+  /// @param amounts The amount to withdraw from each stake
+  function withdrawMultipleCommunityStake(
+    address[] calldata stakees,
+    uint88[] calldata amounts
+  ) external whenNotPaused {
+    if (stakees.length != amounts.length) {
+      revert ArrayLengthMismatch();
+    }
+    uint256 totalAmountToWithdraw = 0;
+
+    for (uint i = 0; i < stakees.length; i++) {
+      _prepareWithdrawCommunityStake(stakees[i], amounts[i]);
+
+      totalAmountToWithdraw += amounts[i];
+    }
+
+    if (!token.transfer(msg.sender, totalAmountToWithdraw)) {
       revert FailedTransfer();
     }
   }
