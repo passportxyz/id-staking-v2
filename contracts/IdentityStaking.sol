@@ -509,7 +509,7 @@ contract IdentityStaking is
     if (stakees.length != amounts.length) {
       revert ArrayLengthMismatch();
     }
-    uint256 totalAmountToWithdraw = 0;
+    uint88 totalAmountToWithdraw = 0;
 
     for (uint i = 0; i < stakees.length; i++) {
       _prepareWithdrawCommunityStake(stakees[i], amounts[i]);
