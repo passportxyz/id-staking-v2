@@ -446,7 +446,7 @@ contract IdentityStaking is
   /// @param durations The duration for each stake in seconds for the new lock period
   /// @dev The duration must be between 12-104 weeks and 104 weeks, and after any existing lock for any of the staker+stakee pairs
   ///      The unlock time is calculated as `block.timestamp + duration`
-  function extendMultipleCommunityStake(
+  function extendMultipleCommunityStakes(
     address[] calldata stakees,
     uint64[] calldata durations
   ) external whenNotPaused {
@@ -502,7 +502,7 @@ contract IdentityStaking is
   /// @notice Withdraw multiple unlocked community stakes
   /// @param stakees The address of the stakees
   /// @param amounts The amount to withdraw from each stake
-  function withdrawMultipleCommunityStake(
+  function withdrawMultipleCommunityStakes(
     address[] calldata stakees,
     uint88[] calldata amounts
   ) external whenNotPaused {
