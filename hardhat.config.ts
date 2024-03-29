@@ -43,6 +43,8 @@ const config: HardhatUserConfig = {
   },
   etherscan: {
     apiKey: {
+      mainnet: process.env.ETHERSCAN_API_KEY!,
+      optimisticEthereum: process.env.OP_ETHERSCAN_API_KEY!,
       "optimism-sepolia": process.env.OP_ETHERSCAN_API_KEY!,
     },
     customChains: [

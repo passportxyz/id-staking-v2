@@ -1,7 +1,7 @@
 import { ethers, upgrades } from "hardhat";
 import { time } from "@nomicfoundation/hardhat-network-helpers";
 
-const TESTING = true;
+const TESTING = false;
 
 async function main() {
   const accounts = await ethers.getSigners();
@@ -10,6 +10,13 @@ async function main() {
   const other_user = accounts[2];
 
   const GTC = await ethers.getContractFactory("GTC");
+
+  let admin_address;
+  if (TESTING) {
+    admin_address = owner.address;
+  } else {
+    admin_address = process.env.ADMIN_ADDRESS as string;
+  }
 
   let gtc;
   if (TESTING) {
@@ -26,10 +33,10 @@ async function main() {
     [
       await gtc.getAddress(),
       process.env.BURN_ADDRESS as string,
-      owner.address,
-      [owner.address],
-      [owner.address],
-      [owner.address],
+      admin_address,
+      [admin_address],
+      [admin_address],
+      [admin_address],
     ],
     {
       kind: "uups",
