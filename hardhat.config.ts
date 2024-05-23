@@ -30,7 +30,15 @@ const config: HardhatUserConfig = {
       },
     },
     "optimism-sepolia": {
-      url: `https://opt-sepolia.g.alchemy.com/v2/${process.env.ALCHEMY_KEY}`,
+      url: `https://opt-sepolia.g.alchemy.com/v2/${process.env.OP_SEPOLIA_ALCHEMY_KEY}`,
+      accounts: [
+        process.env.DEPLOYER_PRIVATE_KEY as string,
+        process.env.USER_0_PRIVATE_KEY as string,
+        process.env.USER_1_PRIVATE_KEY as string,
+      ],
+    },
+    arbitrum: {
+      url: `https://arb-mainnet.g.alchemy.com/v2/${process.env.ARBITRUM_ALCHEMY_API_KEY}`,
       accounts: [
         process.env.DEPLOYER_PRIVATE_KEY as string,
         process.env.USER_0_PRIVATE_KEY as string,
@@ -46,6 +54,7 @@ const config: HardhatUserConfig = {
       mainnet: process.env.ETHERSCAN_API_KEY!,
       optimisticEthereum: process.env.OP_ETHERSCAN_API_KEY!,
       "optimism-sepolia": process.env.OP_ETHERSCAN_API_KEY!,
+      arbitrum: process.env.ARBITRUM_ETHERSCAN_API_KEY!,
     },
     customChains: [
       {
@@ -54,6 +63,14 @@ const config: HardhatUserConfig = {
         urls: {
           apiURL: "https://api-sepolia-optimistic.etherscan.io/api",
           browserURL: "https://sepolia-optimism.etherscan.io/",
+        },
+      },
+      {
+        network: "arbitrum",
+        chainId: 42161,
+        urls: {
+          apiURL: "https://api.arbiscan.io/",
+          browserURL: "https://arbiscan.io/",
         },
       },
     ],
