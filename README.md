@@ -16,6 +16,10 @@ writing this contract:
 - Slashing, burning, and releasing must be gas-efficient enough to be practical
 - Events should be emitted to allow simple indexing of all activity
 
+## Audit
+
+- https://code4rena.com/reports/2024-03-gitcoin
+
 ## Table of Contents
 
 1. [Working with the repo](#working-with-the-repo)
